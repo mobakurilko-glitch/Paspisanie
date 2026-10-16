@@ -51,8 +51,8 @@ jobs:
                   applicationId = "ru.dalgau.raspisanie"
                   minSdk = 26
                   targetSdk = 34
-                  versionCode = 2
-                  versionName = "2.0"
+                  versionCode = 3
+                  versionName = "3.0"
               }
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
@@ -70,6 +70,7 @@ jobs:
               <uses-permission android:name="android.permission.INTERNET" />
               <application
                   android:label="Расписание"
+                  android:usesCleartextTraffic="true"
                   android:icon="@mipmap/ic_launcher"
                   android:roundIcon="@mipmap/ic_launcher"
                   android:theme="@style/Theme.AppCompat.DayNight.NoActionBar">
@@ -97,17 +98,23 @@ jobs:
           import androidx.appcompat.app.AppCompatActivity
           import androidx.core.view.WindowCompat
           import org.json.JSONObject
+          import java.net.CookieHandler
+          import java.net.CookieManager
           import java.net.HttpURLConnection
+          import java.net.SocketTimeoutException
           import java.net.URL
+          import java.net.UnknownHostException
           import kotlin.concurrent.thread
 
           class MainActivity : AppCompatActivity() {
 
               private lateinit var webView: WebView
+              private var pageReady = false
 
               @SuppressLint("SetJavaScriptEnabled")
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
+                  if (CookieHandler.getDefault() == null) CookieHandler.setDefault(CookieManager())
 
                   val dark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
                           Configuration.UI_MODE_NIGHT_YES
@@ -126,7 +133,9 @@ jobs:
 
                   webView.settings.javaScriptEnabled = true
                   webView.settings.domStorageEnabled = true
-                  webView.webViewClient = WebViewClient()
+                  webView.webViewClient = object : WebViewClient() {
+                      override fun onPageFinished(view: WebView, url: String?) { pageReady = true }
+                  }
                   webView.addJavascriptInterface(Bridge(), "Native")
 
                   onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -140,26 +149,54 @@ jobs:
                   webView.loadUrl("file:///android_asset/index.html")
               }
 
+              override fun onResume() {
+                  super.onResume()
+                  if (pageReady) webView.evaluateJavascript("window.onAppResume && window.onAppResume()", null)
+              }
+
               inner class Bridge {
                   @JavascriptInterface
-                  fun fetch(id: String, url: String) {
+                  fun fetch(id: String, url: String, xhr: Boolean) {
                       thread {
                           var ok = false
-                          val body = try {
-                              val c = URL(url).openConnection() as HttpURLConnection
-                              c.connectTimeout = 15000
-                              c.readTimeout = 20000
-                              c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) RaspisanieApp/2.0")
-                              c.setRequestProperty("Accept-Language", "ru")
-                              val code = c.responseCode
-                              if (code in 200..299) {
-                                  ok = true
-                                  c.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                              } else "HTTP $code"
-                          } catch (e: Exception) {
-                              e.toString()
+                          var body = "error"
+                          var finalUrl = url
+                          for (attempt in 0 until 3) {
+                              try {
+                                  val c = URL(url).openConnection() as HttpURLConnection
+                                  c.connectTimeout = 15000
+                                  c.readTimeout = 45000
+                                  c.instanceFollowRedirects = true
+                                  c.setRequestProperty("User-Agent",
+                                      "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Mobile Safari/537.36")
+                                  c.setRequestProperty("Accept-Language", "ru-RU,ru;q=0.9")
+                                  if (xhr) {
+                                      c.setRequestProperty("X-Requested-With", "XMLHttpRequest")
+                                      c.setRequestProperty("Accept", "application/json, text/javascript, */*; q=0.01")
+                                  } else {
+                                      c.setRequestProperty("Accept", "text/html,text/calendar,*/*")
+                                  }
+                                  val code = c.responseCode
+                                  if (code in 200..299) {
+                                      body = c.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                                      finalUrl = c.url.toString()
+                                      ok = true
+                                  } else {
+                                      body = "HTTP $code"
+                                  }
+                                  c.disconnect()
+                                  if (ok || code in 400..499) break
+                              } catch (e: SocketTimeoutException) {
+                                  body = "timeout"
+                              } catch (e: UnknownHostException) {
+                                  body = "nohost"
+                                  break
+                              } catch (e: Exception) {
+                                  body = e.javaClass.simpleName
+                              }
+                              try { Thread.sleep(1500L * (attempt + 1)) } catch (ie: InterruptedException) {}
                           }
-                          val js = "window.__nativeDone(${JSONObject.quote(id)}, $ok, ${JSONObject.quote(body)})"
+                          val js = "window.__nativeDone(${JSONObject.quote(id)}, $ok, ${JSONObject.quote(body)}, ${JSONObject.quote(finalUrl)})"
                           runOnUiThread { webView.evaluateJavascript(js, null) }
                       }
                   }
@@ -205,21 +242,23 @@ jobs:
           <style>
           :root{
             --bg:#F4F5F8; --card:#FFFFFF; --text:#14161C; --muted:#6B7180; --line:#E4E6EC;
-            --accent:#3B6CF6; --accent-soft:#E7EEFF;
-            --lec:#3B6CF6; --lec-soft:#E7EEFF;
-            --pr:#14A06A; --pr-soft:#E1F5EC;
-            --lab:#E8782A; --lab-soft:#FDEEE2;
-            --oth:#8A5CF0; --oth-soft:#F0E9FF;
+            --accent:#3B6CF6; --accent-soft:#DCE6FF;
+            --lec:#3B6CF6; --lec-soft:#DCE6FF;
+            --pr:#14A06A; --pr-soft:#D3F1E3;
+            --lab:#E8782A; --lab-soft:#FCE3CF;
+            --oth:#8A5CF0; --oth-soft:#E8DDFF;
+            --warn:#D9822B;
             --shadow:0 1px 2px rgba(20,22,28,.06),0 4px 14px rgba(20,22,28,.05);
           }
           @media (prefers-color-scheme: dark){
             :root{
               --bg:#0F1115; --card:#1A1D24; --text:#ECEEF3; --muted:#9097A6; --line:#2A2E38;
-              --accent:#7C9BFF; --accent-soft:#1F2741;
-              --lec:#7C9BFF; --lec-soft:#1F2741;
-              --pr:#3FD39B; --pr-soft:#15302A;
-              --lab:#FFA25E; --lab-soft:#38261A;
-              --oth:#B59BFF; --oth-soft:#2A2340;
+              --accent:#7C9BFF; --accent-soft:#25305A;
+              --lec:#7C9BFF; --lec-soft:#25305A;
+              --pr:#3FD39B; --pr-soft:#173A30;
+              --lab:#FFA25E; --lab-soft:#45301F;
+              --oth:#B59BFF; --oth-soft:#33294F;
+              --warn:#FFB061;
               --shadow:none;
             }
           }
@@ -239,7 +278,7 @@ jobs:
           @keyframes spin{to{transform:rotate(360deg)}}
 
           .status{font-size:12px;color:var(--muted);margin:6px 0 0;min-height:16px}
-          .status.off{color:var(--lab)}
+          .status.off{color:var(--warn)}
 
           main{padding:0 16px}
           .view{display:none}.view.on{display:block}
@@ -259,39 +298,47 @@ jobs:
 
           /* week */
           .week{display:flex;align-items:center;justify-content:space-between;margin:2px 0 10px}
-          .week .rng{font-weight:600}
-          .week .rng small{display:block;font-size:12px;color:var(--muted);font-weight:500;text-align:center}
+          .week .rng{font-weight:600;text-align:center}
+          .week .rng small{display:block;font-size:12px;color:var(--muted);font-weight:500}
           .week button.arrow{width:34px;height:34px;border-radius:10px;background:var(--card);box-shadow:var(--shadow);font-size:20px;line-height:34px}
           .days{display:grid;grid-template-columns:repeat(var(--n,6),1fr);gap:6px;margin-bottom:14px}
-          .day{background:var(--card);border-radius:14px;padding:8px 0 7px;text-align:center;box-shadow:var(--shadow);position:relative}
+          .day{background:var(--card);border-radius:14px;padding:8px 0 7px;text-align:center;box-shadow:var(--shadow);position:relative;overflow:hidden}
           .day b{display:block;font-size:17px;margin-top:1px}
           .day span{font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:600}
           .day .dots{display:flex;justify-content:center;gap:3px;height:5px;margin-top:4px}
           .day .dots i{width:5px;height:5px;border-radius:50%;background:var(--muted);opacity:.45}
+          .day .dots i.p{background:var(--accent);opacity:1}
           .day.today span{color:var(--accent)}
           .day.sel{background:var(--accent);box-shadow:0 4px 12px rgba(59,108,246,.3)}
-          .day.sel span,.day.sel b{color:#fff}.day.sel .dots i{background:#fff;opacity:.8}
+          .day.sel span,.day.sel b{color:#fff}.day.sel .dots i{background:#fff;opacity:.55}.day.sel .dots i.p{opacity:1}
 
-          .summary{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}
-          .pill{font-size:12px;padding:5px 10px;border-radius:999px;background:var(--card);color:var(--muted);box-shadow:var(--shadow);font-weight:500}
-          .pill b{color:var(--text)}
+          /* day progress */
+          .dprog{background:var(--card);border-radius:16px;padding:12px 14px;margin-bottom:12px;box-shadow:var(--shadow)}
+          .dprog .row{display:flex;justify-content:space-between;gap:10px;font-size:13px;color:var(--muted);align-items:baseline}
+          .dprog .row b{color:var(--text);font-size:15px}
+          .dprog .bar{height:8px;border-radius:4px;background:var(--line);margin:10px 0 0;overflow:hidden;display:flex;gap:2px}
+          .dprog .bar i{display:block;height:100%;flex:1;background:var(--line);position:relative;overflow:hidden}
+          .dprog .bar i::after{content:"";position:absolute;inset:0;width:var(--p,0%);background:var(--accent)}
 
           /* lessons */
           .lesson{display:flex;gap:12px;background:var(--card);border-radius:16px;padding:12px 14px;margin-bottom:10px;box-shadow:var(--shadow);position:relative;overflow:hidden}
-          .lesson::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--c)}
-          .lesson.past{opacity:.5}
-          .lesson.cur{outline:2px solid var(--c)}
+          .lesson .fill{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--cs);transition:width .8s ease}
+          .lesson.cur .fill{box-shadow:inset -2px 0 0 var(--c)}
+          .lesson::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--c);z-index:1}
+          .lesson > .tm,.lesson > .bd{position:relative;z-index:1}
+          .lesson.cur{box-shadow:0 0 0 2px var(--c)}
           .lesson .tm{min-width:50px;text-align:right}
           .lesson .tm b{display:block;font-size:15px}
           .lesson .tm span{display:block;font-size:12px;color:var(--muted)}
-          .lesson .tm .n{display:inline-block;margin-top:6px;font-size:11px;font-weight:700;color:var(--c);background:var(--cs);border-radius:6px;padding:1px 6px}
+          .lesson .tm .n{display:inline-block;margin-top:6px;font-size:11px;font-weight:700;color:var(--c);background:var(--card);border-radius:6px;padding:1px 6px}
           .lesson .bd{flex:1;min-width:0}
           .lesson .ttl{font-weight:650;font-size:15px;margin-bottom:5px}
           .tags{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-          .tag{font-size:12px;font-weight:600;padding:2px 8px;border-radius:7px;background:var(--cs);color:var(--c)}
+          .tag{font-size:12px;font-weight:600;padding:2px 8px;border-radius:7px;background:var(--card);color:var(--c)}
           .meta{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:4px}
           .meta svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;flex:none}
           .lesson .who{margin-top:6px}
+          .lesson .prog{margin-top:7px;font-size:12px;font-weight:700;color:var(--c)}
           .k-lec{--c:var(--lec);--cs:var(--lec-soft)}
           .k-pr{--c:var(--pr);--cs:var(--pr-soft)}
           .k-lab{--c:var(--lab);--cs:var(--lab-soft)}
@@ -299,22 +346,25 @@ jobs:
 
           .gap{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12px;margin:2px 0 12px 6px}
           .gap::before,.gap::after{content:"";flex:1;height:1px;background:var(--line)}
+          .gap.now{color:var(--accent);font-weight:600}
+          .gap.now::before,.gap.now::after{background:var(--accent);opacity:.5}
 
           .empty{text-align:center;padding:42px 20px;color:var(--muted)}
           .empty .em{font-size:44px;margin-bottom:8px}
           .empty b{display:block;color:var(--text);font-size:17px;margin-bottom:4px}
+          .btn{display:inline-block;margin-top:14px;padding:10px 18px;border-radius:12px;background:var(--accent);color:#fff;font-weight:600}
 
           /* subjects */
-          .sem{background:var(--card);border-radius:18px;padding:16px;margin:8px 0 14px;box-shadow:var(--shadow)}
+          .intro{font-size:13px;color:var(--muted);margin:8px 2px 12px}
+          .sem{background:var(--card);border-radius:18px;padding:16px;margin:0 0 14px;box-shadow:var(--shadow)}
           .sem h3{margin:0 0 4px;font-size:16px}
           .sem p{margin:0;color:var(--muted);font-size:13px}
           .sem .bar,.subj .bar{height:8px;background:var(--line);border-radius:4px;overflow:hidden;margin:12px 0 6px}
           .sem .bar i,.subj .bar i{display:block;height:100%;background:var(--accent);border-radius:4px}
-          .sem .row{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
+          .sem .row,.subj .row{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
           .subj{background:var(--card);border-radius:16px;padding:14px;margin-bottom:10px;box-shadow:var(--shadow)}
           .subj .ttl{font-weight:650;margin-bottom:4px}
           .subj .bar{height:6px;margin:10px 0 6px}
-          .subj .row{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
           .subj .nx{font-size:13px;margin-top:8px}
 
           /* nav */
@@ -327,10 +377,11 @@ jobs:
           .veil{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:10;opacity:0;pointer-events:none;transition:opacity .2s}
           .veil.on{opacity:1;pointer-events:auto}
           .sheet{position:fixed;left:0;right:0;bottom:0;z-index:11;background:var(--card);border-radius:22px 22px 0 0;padding:10px 18px 26px;
-            transform:translateY(105%);transition:transform .25s ease;max-height:85vh;overflow:auto}
+            transform:translateY(105%);transition:transform .25s ease;max-height:88vh;overflow:auto}
           .sheet.on{transform:none}
           .sheet .grab{width:40px;height:4px;border-radius:2px;background:var(--line);margin:0 auto 14px}
           .sheet h2{font-size:20px;margin:6px 0 10px;line-height:1.25}
+          .sheet h4{margin:18px 0 6px;font-size:14px}
           .sheet .li{display:flex;gap:12px;padding:10px 0;border-top:1px solid var(--line);font-size:14px}
           .sheet .li span{color:var(--muted);min-width:110px}
           .sheet .li b{font-weight:600}
@@ -338,12 +389,18 @@ jobs:
           .opt button{flex:1;padding:10px;border-radius:12px;background:var(--bg);font-weight:600}
           .opt button.on{background:var(--accent);color:#fff}
           .hint{font-size:12px;color:var(--muted);margin:6px 0 0}
+          .inp{width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit;font-size:16px;outline:none}
+          .inp:focus{border-color:var(--accent)}
+          .res{margin-top:6px}
+          .res button{display:block;width:100%;text-align:left;padding:11px 12px;border-radius:10px;font-weight:600}
+          .res button:active{background:var(--bg)}
+          .cur-grp{display:inline-block;padding:4px 10px;border-radius:8px;background:var(--accent-soft);color:var(--accent);font-weight:700;margin-left:6px}
           </style>
           </head>
           <body>
           <header>
             <div class="top">
-              <h1>Расписание<span class="grp">Группа 7-1224 · ДальГАУ</span></h1>
+              <h1>Расписание<span class="grp" id="grpLbl"></span></h1>
               <button class="iconbtn" id="btnSet" aria-label="Настройки"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
               <button class="iconbtn" id="btnRef" aria-label="Обновить"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg></button>
             </div>
@@ -377,7 +434,8 @@ jobs:
 
           <script>
           "use strict";
-          const BASE = "https://dalgau.fliptable.ru/timetables/7113/groups/7-1224--9";
+          const SITE = "https://dalgau.fliptable.ru";
+          const DEFAULT_GROUP = { name: "7-1224", url: SITE + "/timetables/7113/groups/7-1224--9" };
           const SLOTS = ["8:00","9:45","11:30","14:00","15:45","17:30"];
           const DOW = ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"];
           const DOW_FULL = ["понедельник","вторник","среда","четверг","пятница","суббота","воскресенье"];
@@ -387,7 +445,9 @@ jobs:
           /* ---------- storage ---------- */
           const store = {
             get(k, d){ try{ const v = localStorage.getItem(k); return v==null ? d : JSON.parse(v); }catch(e){ return d; } },
-            set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+            set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} },
+            del(k){ try{ localStorage.removeItem(k); }catch(e){} },
+            keys(){ try{ return Object.keys(localStorage); }catch(e){ return []; } }
           };
 
           /* ---------- dates ---------- */
@@ -398,7 +458,8 @@ jobs:
           const addDays = (d,n) => { const x = new Date(d); x.setDate(x.getDate()+n); return x; };
           const mondayOf = d => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); const w = (x.getDay()+6)%7; return addDays(x,-w); };
           const toMin = t => { const [h,m] = t.split(":").map(Number); return h*60+m; };
-          const nowMin = () => { const n = new Date(); return n.getHours()*60+n.getMinutes(); };
+          const nowMinF = () => { const n = new Date(); return n.getHours()*60+n.getMinutes()+n.getSeconds()/60; };
+          const todayIso = () => iso(new Date());
           function dur(min){
             min = Math.max(0, Math.round(min));
             const h = Math.floor(min/60), m = min%60;
@@ -409,6 +470,8 @@ jobs:
           function plural(n, a, b, c){ const n10=n%10, n100=n%100;
             if (n10===1 && n100!==11) return a; if (n10>=2&&n10<=4&&(n100<10||n100>=20)) return b; return c; }
           const pairs = n => n+" "+plural(n,"пара","пары","пар");
+          const hhmm = d => d.getHours()+":"+pad(d.getMinutes());
+          function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 
           /* ---------- kinds ---------- */
           function kindOf(raw){
@@ -421,16 +484,27 @@ jobs:
             return {k:"oth", t};
           }
 
+          /* ---------- teachers: "Профессор, Курков Ю.Б." ---------- */
+          const FIO = store.get("fio", {});           // "Курков Ю.Б." -> {full:"Курков Юрий Борисович"} | {miss:ts}
+          function splitTeacher(t){
+            t = (t||"").trim(); const i = t.lastIndexOf(",");
+            return i > 0 ? { pos: t.slice(0,i).trim(), short: t.slice(i+1).trim() } : { pos: "", short: t };
+          }
+          function fullName(short){ const f = FIO[short]; return f && f.full ? f.full : short; }
+          function teacherList(t){ return (t||"").split(";").map(x => x.trim()).filter(Boolean).map(splitTeacher); }
+          function teacherNames(t){ return teacherList(t).map(x => fullName(x.short)).join(", "); }
+          function teacherFull(t){ return teacherList(t).map(x => fullName(x.short) + (x.pos ? " ("+x.pos.toLowerCase()+")" : "")).join("; "); }
+
           /* ---------- parse week page ---------- */
           function parseWeek(html, monday){
             const doc = new DOMParser().parseFromString(html, "text/html");
             let tables = doc.querySelectorAll(".media-lessons-table table.group_timetable");
             if (!tables.length) tables = doc.querySelectorAll("table.group_timetable");
+            if (!tables.length) throw new Error("not-timetable");
             const seen = new Set(); const out = [];
             let di = -1;
             tables.forEach(tb => {
-              const dateTxt = (tb.querySelector(".date")||{}).textContent || "";
-              const key = dateTxt.trim();
+              const key = ((tb.querySelector(".date")||{}).textContent || "").trim();
               if (seen.has(key)) return; seen.add(key);
               di++;
               const date = iso(addDays(monday, di));
@@ -451,10 +525,8 @@ jobs:
                   const sub = subEl ? (subEl.getAttribute("title")||subEl.textContent).replace(/Подгруппа\s*/i,"").replace(/[()]/g,"").trim() : null;
                   const name = (disc.getAttribute("title") || disc.textContent).replace(/\s+/g," ").trim();
                   const kindEl = ls.querySelector(":scope > .kind");
-                  const roomEls = ls.querySelectorAll(":scope > .classrooms");
-                  const lectEls = ls.querySelectorAll(":scope > .lecturers");
-                  const room = [...roomEls].map(e => (e.getAttribute("title")||e.textContent).trim()).join(", ");
-                  const teacher = [...lectEls].map(e => (e.getAttribute("title")||e.textContent).replace(/ /g," ").replace(/\s+/g," ").trim()).join("; ");
+                  const room = [...ls.querySelectorAll(":scope > .classrooms")].map(e => (e.getAttribute("title")||e.textContent).trim()).join(", ");
+                  const teacher = [...ls.querySelectorAll(":scope > .lecturers")].map(e => (e.getAttribute("title")||e.textContent).replace(/ /g," ").replace(/\s+/g," ").trim()).join("; ");
                   const kd = kindOf(kindEl ? kindEl.textContent : "");
                   out.push({ date, start, end, num: SLOTS.indexOf(start)+1, name, sub, kind: kd.k, kindT: kd.t, room, teacher });
                 });
@@ -465,9 +537,9 @@ jobs:
 
           /* ---------- parse ics ---------- */
           function parseIcs(text){
-            const lines = text.replace(/\r/g,"").split("\n");
+            if (text.indexOf("BEGIN:VCALENDAR") < 0) throw new Error("not-ics");
             const un = [];
-            lines.forEach(l => { if (/^[ \t]/.test(l) && un.length) un[un.length-1] += l.slice(1); else un.push(l); });
+            text.replace(/\r/g,"").split("\n").forEach(l => { if (/^[ \t]/.test(l) && un.length) un[un.length-1] += l.slice(1); else un.push(l); });
             const ev = []; let cur = null;
             const unesc = s => s.replace(/\\n/gi," ").replace(/\\([,;\\])/g,"$1").trim();
             un.forEach(l => {
@@ -489,60 +561,139 @@ jobs:
             return ev.map(e => ({ date: e.s.date, start: e.s.time, end: e.e ? e.e.time : "", name: (e.name||"").replace(/^\([^)]*\)\s*/,""), room: e.room||"", teacher: e.teacher||"" }));
           }
 
-          /* ---------- native bridge ---------- */
+          /* ---------- network (через Android, с повторами) ---------- */
           const pending = {}; let seq = 0;
-          window.__nativeDone = (id, ok, body) => { const p = pending[id]; if (!p) return; delete pending[id]; ok ? p.res(body) : p.rej(new Error(body)); };
-          function httpGet(url){
-            return new Promise((res, rej) => {
-              if (window.Native && Native.fetch) { const id = ++seq; pending[id] = {res, rej}; Native.fetch(String(id), url); }
-              else fetch(url).then(r => r.ok ? r.text() : Promise.reject(new Error("HTTP "+r.status))).then(res, rej);
-            });
+          window.__nativeDone = (id, ok, body, url) => { const p = pending[id]; if (!p) return; delete pending[id]; ok ? p.res({body, url: url || ""}) : p.rej(new Error(body)); };
+          let active = 0; const waitQ = [];
+          function slot(){ return new Promise(r => { if (active < 2) { active++; r(); } else waitQ.push(r); }); }
+          function release(){ const n = waitQ.shift(); if (n) n(); else active--; }
+          async function httpGet(url, xhr){
+            await slot();
+            try {
+              return await new Promise((res, rej) => {
+                if (window.Native && Native.fetch) { const id = String(++seq); pending[id] = {res, rej}; Native.fetch(id, url, !!xhr); }
+                else {
+                  const go = async (n) => {
+                    try {
+                      const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 40000);
+                      const r = await fetch(url, { signal: ctl.signal, headers: xhr ? {"X-Requested-With":"XMLHttpRequest", "Accept":"application/json"} : {} });
+                      clearTimeout(tm);
+                      if (!r.ok) throw new Error("HTTP " + r.status);
+                      res({ body: await r.text(), url: r.url });
+                    } catch (e) { if (n < 2) setTimeout(() => go(n+1), 1500*(n+1)); else rej(new Error(e.name === "AbortError" ? "timeout" : e.message)); }
+                  };
+                  go(0);
+                }
+              });
+            } finally { release(); }
+          }
+          function errText(e){
+            const m = String(e && e.message || e);
+            if (/nohost|UnknownHost/i.test(m)) return "нет интернета";
+            if (/timeout/i.test(m)) return "сайт вуза не ответил вовремя";
+            if (/HTTP 5\d\d/.test(m)) return "сайт вуза выдал ошибку " + m.replace("HTTP ","");
+            if (/not-timetable|not-ics/.test(m)) return "сайт вуза прислал не расписание";
+            return "сайт вуза недоступен";
           }
 
           /* ---------- state ---------- */
           const S = {
+            group: store.get("group", DEFAULT_GROUP),
             monday: mondayOf(new Date()),
-            sel: iso(new Date()),
-            weeks: {},           // iso(monday) -> {lessons, ts}
-            ics: store.get("ics", null),   // {events, ts}
+            sel: todayIso(),
+            weeks: {},
+            ics: null, icsErr: null, icsLoading: false,
             sub: store.get("sub", "all"),
-            loading: 0, offline: false
+            loading: 0, err: null, slowTimer: null, slow: false
           };
+          const gk = k => "g:" + S.group.name + ":" + k;
+          S.ics = store.get(gk("ics"), null);
 
           function setStatus(){
             const el = document.getElementById("status");
+            document.getElementById("grpLbl").textContent = "Группа " + S.group.name + " · ДальГАУ";
             const w = S.weeks[iso(S.monday)];
-            if (S.loading) { el.textContent = "Обновляю…"; el.className = "status"; return; }
-            if (!w) { el.textContent = ""; return; }
+            if (S.loading) {
+              el.textContent = S.slow ? "Сайт вуза отвечает медленно, жду…" : "Обновляю…";
+              el.className = "status"; return;
+            }
+            if (S.err) {
+              const t = w ? new Date(w.ts) : null;
+              el.textContent = "Не обновилось: " + S.err + (t ? ". Показана версия от " + (iso(t) === todayIso() ? hhmm(t) : t.getDate()+" "+MON_S[t.getMonth()]+" "+hhmm(t)) : "") + ". Повторю через минуту";
+              el.className = "status off"; return;
+            }
+            if (!w) { el.textContent = ""; el.className = "status"; return; }
             const t = new Date(w.ts);
-            const when = iso(t) === iso(new Date()) ? "сегодня в "+t.getHours()+":"+pad(t.getMinutes()) : t.getDate()+" "+MON[t.getMonth()]+" в "+t.getHours()+":"+pad(t.getMinutes());
-            el.textContent = (S.offline ? "Нет связи · показана сохранённая версия от " : "Обновлено ") + when;
-            el.className = "status" + (S.offline ? " off" : "");
+            el.textContent = "Обновлено " + (iso(t) === todayIso() ? "сегодня в " + hhmm(t) : t.getDate()+" "+MON[t.getMonth()]+" в "+hhmm(t));
+            el.className = "status";
           }
-          function spin(on){ document.getElementById("btnRef").classList.toggle("spin", on); }
+          function busy(delta){
+            S.loading += delta;
+            document.getElementById("btnRef").classList.toggle("spin", S.loading > 0);
+            clearTimeout(S.slowTimer);
+            if (S.loading > 0) { S.slowTimer = setTimeout(() => { S.slow = true; setStatus(); }, 6000); }
+            else S.slow = false;
+            setStatus();
+          }
 
           async function loadWeek(monday, force){
             const key = iso(monday);
-            if (!S.weeks[key]) { const c = store.get("w:"+key, null); if (c) S.weeks[key] = c; }
-            if (S.weeks[key] && !force && Date.now() - S.weeks[key].ts < 10*60*1000) return;
-            S.loading++; spin(true); setStatus();
+            if (!S.weeks[key]) { const c = store.get(gk("w:"+key), null); if (c) S.weeks[key] = c; }
+            const fresh = S.weeks[key] && Date.now() - S.weeks[key].ts < 15*60*1000;
+            if (fresh && !force) return true;
+            busy(1);
             try {
-              const html = await httpGet(BASE + "?week=" + key);
-              const lessons = parseWeek(html, monday);
+              const r = await httpGet(S.group.url + "?week=" + key);
+              const lessons = parseWeek(r.body, monday);
               S.weeks[key] = { lessons, ts: Date.now() };
-              store.set("w:"+key, S.weeks[key]);
-              S.offline = false;
-            } catch (e) { S.offline = true; }
-            S.loading--; spin(S.loading>0); setStatus();
+              store.set(gk("w:"+key), S.weeks[key]);
+              S.err = null;
+              resolveTeachers(lessons.map(l => l.teacher));
+              return true;
+            } catch (e) { S.err = errText(e); return false; }
+            finally { busy(-1); }
           }
 
           async function loadIcs(force){
             if (S.ics && !force && Date.now() - S.ics.ts < 6*3600*1000) return;
+            if (S.icsLoading) return;
+            S.icsLoading = true; S.icsErr = null; renderSubjectsIfOpen();
             try {
-              const txt = await httpGet(BASE + ".ics");
-              S.ics = { events: parseIcs(txt), ts: Date.now() };
-              store.set("ics", S.ics);
-            } catch (e) {}
+              const r = await httpGet(S.group.url + ".ics");
+              S.ics = { events: parseIcs(r.body), ts: Date.now() };
+              store.set(gk("ics"), S.ics);
+              resolveTeachers(S.ics.events.map(e => e.teacher));
+            } catch (e) { S.icsErr = errText(e); }
+            S.icsLoading = false; renderSubjectsIfOpen();
+          }
+
+          /* полные ФИО через поиск сайта */
+          let fioRunning = false; const fioQueue = new Set();
+          function resolveTeachers(list){
+            list.forEach(t => teacherList(t).forEach(x => {
+              const f = FIO[x.short];
+              if (!x.short || (f && (f.full || Date.now() - f.miss < 7*864e5))) return;
+              if (/^\S+\s+[А-ЯЁA-Z]\./.test(x.short)) fioQueue.add(x.short);
+            }));
+            if (!fioRunning && fioQueue.size) runFio();
+          }
+          async function runFio(){
+            fioRunning = true;
+            while (fioQueue.size) {
+              const short = fioQueue.values().next().value; fioQueue.delete(short);
+              const sur = short.split(/\s+/)[0];
+              const ini = short.slice(sur.length).replace(/[\s.]/g,"");
+              try {
+                const r = await httpGet(SITE + "/search?term=" + encodeURIComponent(sur), true);
+                const arr = JSON.parse(r.body);
+                const names = arr.map(x => String(x.label || x.value || "").split(" , ")[0].replace(/\s+/g," ").trim());
+                const hit = names.find(n => { const p = n.split(" "); return p[0] === sur && p.length >= 2 && p[1][0] === ini[0] && (!ini[1] || (p[2]||"")[0] === ini[1]); });
+                FIO[short] = hit ? { full: hit } : { miss: Date.now() };
+                store.set("fio", FIO);
+                renderDay(); renderSubjectsIfOpen();
+              } catch (e) { /* попробуем в следующий раз */ }
+            }
+            fioRunning = false;
           }
 
           /* ---------- filtering ---------- */
@@ -552,32 +703,40 @@ jobs:
             if (!w) return null;
             return w.lessons.filter(l => l.date === dateIso && bySub(l)).sort((a,b) => toMin(a.start)-toMin(b.start));
           }
+          /* сколько занятия уже прошло: 0..1 */
+          function progressOf(l){
+            const td = todayIso();
+            if (l.date < td) return 1;
+            if (l.date > td) return 0;
+            const t = nowMinF(), s = toMin(l.start), e = toMin(l.end);
+            return Math.min(1, Math.max(0, (t - s) / (e - s)));
+          }
 
           /* ---------- render: now card ---------- */
           function renderNow(){
             const box = document.getElementById("now");
-            const today = iso(new Date());
-            const ls = dayLessons(today);
+            const ls = dayLessons(todayIso());
             if (!ls) { box.innerHTML = ""; return; }
-            const t = nowMin();
+            const t = nowMinF();
             const where = l => l.room ? " · ауд. "+esc(l.room.replace(/\s*\(№\d+\)/,"")) : "";
             const cur = ls.find(l => toMin(l.start) <= t && t < toMin(l.end));
             const next = ls.find(l => toMin(l.start) > t);
+            const left = ls.filter(l => toMin(l.end) > t).length;
             let html = "";
             if (cur) {
               const s = toMin(cur.start), e = toMin(cur.end), p = Math.round((t-s)/(e-s)*100);
-              html = `<div class="now"><div class="lbl">Сейчас идёт · ${cur.num ? cur.num+" пара" : cur.kindT}</div>
+              html = `<div class="now"><div class="lbl">Сейчас идёт · ${cur.num ? cur.num+" пара" : esc(cur.kindT)}</div>
                 <div class="big">${esc(cur.name)}</div><div class="sub">${esc(cur.kindT)}${where(cur)}</div>
                 <div class="bar"><i style="width:${p}%"></i></div>
-                <div class="row"><span>${cur.start} – ${cur.end}</span><span>до конца ${dur(e-t)}</span></div>
-                ${next ? `<div class="next">Дальше в ${next.start}: ${esc(next.name)}${where(next)}</div>` : `<div class="next">Это последняя пара сегодня 🎉</div>`}</div>`;
+                <div class="row"><span>${cur.start} – ${cur.end} · ${p}%</span><span>до конца ${dur(e-t)}</span></div>
+                <div class="next">${next ? `Дальше в ${next.start}: ${esc(next.name)}${where(next)} · ещё ${pairs(left-1)} после этой` : "Это последняя пара сегодня 🎉"}</div></div>`;
             } else if (next) {
-              const first = ls.length && toMin(ls[0].start) > t;
+              const first = toMin(ls[0].start) > t;
               html = `<div class="now rest"><div class="lbl">${first ? "Первая пара" : "Перерыв"} · через ${dur(toMin(next.start)-t)}</div>
                 <div class="big">${esc(next.name)}</div><div class="sub">${next.start} – ${next.end} · ${esc(next.kindT)}${where(next)}</div>
-                ${first ? `<div class="next">Сегодня ${pairs(ls.length)}, закончите в ${ls[ls.length-1].end}</div>` : ""}</div>`;
+                <div class="next">Сегодня осталось ${pairs(left)}, конец в ${ls[ls.length-1].end}</div></div>`;
             } else {
-              const tm = addDays(new Date(), 1); const tl = dayLessons(iso(tm));
+              const tl = dayLessons(iso(addDays(new Date(), 1)));
               let nx = "";
               if (tl && tl.length) nx = `Завтра ${pairs(tl.length)}, первая в ${tl[0].start} — ${esc(tl[0].name)}`;
               else if (tl) nx = "Завтра пар нет — отдыхайте";
@@ -589,29 +748,24 @@ jobs:
           }
 
           /* ---------- render: week + day ---------- */
-          function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
           const ICON_PIN = '<svg viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>';
           const ICON_USER = '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>';
 
-          function shortTeacher(t){ return (t||"").split(";").map(x => { const p = x.split(","); return (p.length>1 ? p.slice(1).join(",") : x).trim(); }).join(", "); }
-
           function renderWeek(){
             const m = S.monday, sun = addDays(m, 6);
-            const curMon = iso(mondayOf(new Date())) === iso(m);
             const diff = Math.round((m - mondayOf(new Date())) / (7*864e5));
-            const label = curMon ? "Эта неделя" : diff === 1 ? "Следующая неделя" : diff === -1 ? "Прошлая неделя" : (diff > 0 ? "Через "+diff+" нед." : Math.abs(diff)+" нед. назад");
+            const label = diff === 0 ? "Эта неделя" : diff === 1 ? "Следующая неделя" : diff === -1 ? "Прошлая неделя" : (diff > 0 ? "Через "+diff+" нед." : Math.abs(diff)+" нед. назад");
             document.getElementById("wRange").innerHTML =
               `${m.getDate()} ${m.getMonth()!==sun.getMonth() ? MON_S[m.getMonth()]+" " : ""}– ${sun.getDate()} ${MON_S[sun.getMonth()]}<small>${label}</small>`;
             const w = S.weeks[iso(m)];
-            const sunHas = w && w.lessons.some(l => l.date === iso(sun) && bySub(l));
-            const n = sunHas ? 7 : 6;
-            const today = iso(new Date());
+            const n = w && w.lessons.some(l => l.date === iso(sun) && bySub(l)) ? 7 : 6;
             let h = "";
             for (let i = 0; i < n; i++){
               const d = addDays(m, i), di = iso(d);
-              const cnt = w ? w.lessons.filter(l => l.date === di && bySub(l)).length : 0;
-              h += `<button class="day${di===S.sel?" sel":""}${di===today?" today":""}" data-d="${di}">
-                <span>${DOW[i]}</span><b>${d.getDate()}</b><div class="dots">${"<i></i>".repeat(Math.min(cnt,6))}</div></button>`;
+              const ls = w ? w.lessons.filter(l => l.date === di && bySub(l)) : [];
+              const dots = ls.slice(0,6).map(l => `<i class="${progressOf(l) >= 1 ? "p" : ""}"></i>`).join("");
+              h += `<button class="day${di===S.sel?" sel":""}${di===todayIso()?" today":""}" data-d="${di}">
+                <span>${DOW[i]}</span><b>${d.getDate()}</b><div class="dots">${dots}</div></button>`;
             }
             const box = document.getElementById("days");
             box.style.setProperty("--n", n); box.innerHTML = h;
@@ -622,8 +776,9 @@ jobs:
             const ls = dayLessons(S.sel);
             const d = fromIso(S.sel);
             if (ls === null) {
-              box.innerHTML = S.loading ? `<div class="empty"><div class="em">⏳</div><b>Загружаю расписание</b></div>`
-                : `<div class="empty"><div class="em">📡</div><b>Нет данных</b>Проверьте интернет и нажмите «Обновить»</div>`;
+              box.innerHTML = S.loading ? `<div class="empty"><div class="em">⏳</div><b>Загружаю расписание</b>${S.slow ? "Сайт вуза отвечает медленно, подождите немного" : ""}</div>`
+                : `<div class="empty"><div class="em">📡</div><b>Не удалось загрузить</b>${esc(S.err || "Проверьте интернет")}<br><button class="btn" id="retryDay">Повторить</button></div>`;
+              const b = document.getElementById("retryDay"); if (b) b.onclick = () => loadWeek(mondayOf(d), true).then(renderAll);
               return;
             }
             if (!ls.length) {
@@ -631,26 +786,44 @@ jobs:
               box.innerHTML = `<div class="empty"><div class="em">${wk ? "🛋️" : "🎈"}</div><b>${wk ? "Выходной" : "Пар нет"}</b>${DOW_FULL[(d.getDay()+6)%7]}, ${d.getDate()} ${MON[d.getMonth()]}</div>`;
               return;
             }
-            const isToday = S.sel === iso(new Date()), isPast = fromIso(S.sel) < fromIso(iso(new Date()));
-            const t = nowMin();
-            const total = ls.reduce((a,l) => a + toMin(l.end)-toMin(l.start), 0);
-            const kinds = {}; ls.forEach(l => kinds[l.kindT] = (kinds[l.kindT]||0)+1);
-            let h = `<div class="summary"><span class="pill"><b>${pairs(ls.length)}</b></span>
-              <span class="pill">${ls[0].start} – <b>${ls[ls.length-1].end}</b></span>
-              <span class="pill">в вузе ${dur(toMin(ls[ls.length-1].end)-toMin(ls[0].start))}</span></div>`;
+            const t = nowMinF();
+            const isToday = S.sel === todayIso();
+            const prog = ls.map(progressOf);
+            const doneN = prog.filter(p => p >= 1).length;
+            const leftN = ls.length - doneN;
+            const first = toMin(ls[0].start), last = toMin(ls[ls.length-1].end);
+            let head;
+            if (isToday && t >= first && t < last) head = `<b>Прошло ${doneN} из ${ls.length}</b><span>осталось ${pairs(leftN)} · до конца дня ${dur(last - t)}</span>`;
+            else if (isToday && t < first) head = `<b>${pairs(ls.length)}</b><span>начало в ${ls[0].start}, через ${dur(first - t)}</span>`;
+            else if (prog.every(p => p >= 1)) head = `<b>Все ${pairs(ls.length)} прошли</b><span>${ls[0].start} – ${ls[ls.length-1].end}</span>`;
+            else head = `<b>${pairs(ls.length)}</b><span>${ls[0].start} – ${ls[ls.length-1].end} · в вузе ${dur(last-first)}</span>`;
+            let h = `<div class="dprog"><div class="row">${head}</div>
+              <div class="bar">${prog.map(p => `<i style="--p:${Math.round(p*100)}%"></i>`).join("")}</div></div>`;
+
             ls.forEach((l, i) => {
               if (i > 0) {
-                const g = toMin(l.start) - toMin(ls[i-1].end);
-                if (g >= 60) h += `<div class="gap">${toMin(ls[i-1].end) <= 13*60 && toMin(l.start) >= 14*60 && g <= 75 ? "Обед" : "Окно"} · ${dur(g)}</div>`;
+                const ge = toMin(ls[i-1].end), gs = toMin(l.start), g = gs - ge;
+                if (g >= 30) {
+                  const inGap = isToday && t >= ge && t < gs;
+                  const word = ge <= 13*60 && gs >= 14*60 && g <= 75 ? "Обед" : (g >= 60 ? "Окно" : "Перерыв");
+                  h += `<div class="gap${inGap ? " now" : ""}">${inGap ? "Сейчас " + word.toLowerCase() + " · ещё " + dur(gs - t) : word + " · " + dur(g)}</div>`;
+                }
               }
+              const p = prog[i];
               const s = toMin(l.start), e = toMin(l.end);
-              const st = isPast || (isToday && t >= e) ? " past" : (isToday && t >= s && t < e ? " cur" : "");
-              h += `<div class="lesson k-${l.kind}${st}" data-i="${i}">
+              const cur = p > 0 && p < 1;
+              let progTxt = "";
+              if (cur) progTxt = `<div class="prog">Идёт · ${Math.round(p*100)}% · осталось ${dur(e - t)}</div>`;
+              else if (p >= 1) progTxt = `<div class="prog">✓ Прошла</div>`;
+              else if (isToday) progTxt = `<div class="prog" style="color:var(--muted)">через ${dur(s - t)}</div>`;
+              h += `<div class="lesson k-${l.kind}${cur ? " cur" : ""}" data-i="${i}">
+                <div class="fill" style="width:${(p*100).toFixed(1)}%"></div>
                 <div class="tm"><b>${l.start}</b><span>${l.end}</span>${l.num ? `<div class="n">${l.num} пара</div>` : ""}</div>
                 <div class="bd"><div class="ttl">${esc(l.name)}</div>
                   <div class="tags"><span class="tag">${esc(l.kindT)}</span>${l.sub ? `<span class="tag">Подгр. ${esc(l.sub)}</span>` : ""}
                     ${l.room ? `<span class="meta">${ICON_PIN}${esc(l.room)}</span>` : ""}</div>
-                  ${l.teacher ? `<div class="meta who">${ICON_USER}${esc(shortTeacher(l.teacher))}</div>` : ""}
+                  ${l.teacher ? `<div class="meta who">${ICON_USER}${esc(teacherNames(l.teacher))}</div>` : ""}
+                  ${progTxt}
                 </div></div>`;
             });
             box.innerHTML = h;
@@ -668,55 +841,72 @@ jobs:
             return S.ics.events.filter(e => e.date >= a && e.date <= b);
           }
           function isDone(e){
-            const today = iso(new Date());
-            return e.date < today || (e.date === today && toMin(e.end || e.start) <= nowMin());
+            const td = todayIso();
+            return e.date < td || (e.date === td && toMin(e.end || e.start) <= nowMinF());
           }
+          const evKey = e => e.date + p4(toMin(e.start));
           function fmtDate(di){ const d = fromIso(di); return DOW[(d.getDay()+6)%7]+", "+d.getDate()+" "+MON[d.getMonth()]; }
 
-          function renderSubjects(){
-            const box = document.getElementById("subjBox");
-            const ev = semEvents();
-            if (!ev.length) { box.innerHTML = `<div class="empty"><div class="em">📚</div><b>${S.ics ? "Нет данных за семестр" : "Загружаю предметы"}</b></div>`; return; }
-            const done = ev.filter(isDone).length;
-            const dates = ev.map(e => e.date).sort();
-            const last = dates[dates.length-1];
-            const daysLeft = Math.max(0, Math.round((fromIso(last) - fromIso(iso(new Date())))/864e5));
+          function subjectList(){
             const map = {};
-            ev.forEach(e => { (map[e.name] = map[e.name] || {name:e.name, all:[], teachers:new Set()}).all.push(e); if (e.teacher) map[e.name].teachers.add(e.teacher); });
-            const list = Object.values(map).map(s => {
-              s.all.sort((a,b) => (a.date+p4(toMin(a.start))).localeCompare(b.date+p4(toMin(b.start))));
+            semEvents().forEach(e => {
+              const s = map[e.name] = map[e.name] || { name: e.name, all: [], teachers: new Set() };
+              s.all.push(e); if (e.teacher) s.teachers.add(e.teacher);
+            });
+            return Object.values(map).map(s => {
+              s.all.sort((a,b) => evKey(a).localeCompare(evKey(b)));
               s.done = s.all.filter(isDone).length; s.left = s.all.length - s.done;
               s.next = s.all.find(e => !isDone(e));
               return s;
-            }).sort((a,b) => { const nk = s => s.next ? s.next.date+p4(toMin(s.next.start)) : "9"; return nk(a).localeCompare(nk(b)) || b.left - a.left; });
-            let h = `<div class="sem"><h3>Семестр</h3><p>Осталось ${pairs(ev.length-done)} · последние занятия ${fmtDate(last).toLowerCase()} (через ${daysLeft} дн.)</p>
-              <div class="bar"><i style="width:${Math.round(done/ev.length*100)}%"></i></div>
-              <div class="row"><span>Прошло ${done} из ${ev.length}</span><span>${Math.round(done/ev.length*100)}%</span></div></div>`;
-            list.forEach(s => {
-              const p = Math.round(s.done/s.all.length*100);
-              h += `<div class="subj"><div class="ttl">${esc(s.name)}</div>
-                <div class="meta">${ICON_USER}${esc([...s.teachers].map(x => shortTeacher(x)).join(", "))}</div>
-                <div class="bar"><i style="width:${p}%"></i></div>
+            }).sort((a,b) => (a.next ? evKey(a.next) : "9").localeCompare(b.next ? evKey(b.next) : "9") || b.left - a.left);
+          }
+
+          function renderSubjectsIfOpen(){ if (document.getElementById("vSubj").classList.contains("on")) renderSubjects(); }
+          function renderSubjects(){
+            const box = document.getElementById("subjBox");
+            const intro = `<p class="intro">Сколько занятий по каждому предмету уже прошло и сколько осталось до конца семестра. Нажмите на предмет — покажу все оставшиеся даты.</p>`;
+            const ev = semEvents();
+            if (!ev.length) {
+              if (S.icsLoading) box.innerHTML = intro + `<div class="empty"><div class="em">⏳</div><b>Загружаю весь семестр</b>Сайт вуза отдаёт его небыстро — до минуты</div>`;
+              else if (S.icsErr) box.innerHTML = intro + `<div class="empty"><div class="em">📡</div><b>Не удалось загрузить</b>${esc(S.icsErr)}<br><button class="btn" id="retryIcs">Повторить</button></div>`;
+              else box.innerHTML = intro + `<div class="empty"><div class="em">📚</div><b>В этом семестре занятий не найдено</b></div>`;
+              const b = document.getElementById("retryIcs"); if (b) b.onclick = () => loadIcs(true);
+              return;
+            }
+            const done = ev.filter(isDone).length;
+            const last = ev.map(e => e.date).sort().pop();
+            const daysLeft = Math.max(0, Math.round((fromIso(last) - fromIso(todayIso()))/864e5));
+            const list = subjectList();
+            let h = intro + `<div class="sem"><h3>Семестр: ${Math.round(done/ev.length*100)}% позади</h3>
+              <p>Осталось ${pairs(ev.length-done)} · последние занятия ${fmtDate(last).toLowerCase()} (через ${daysLeft} ${plural(daysLeft,"день","дня","дней")})</p>
+              <div class="bar"><i style="width:${(done/ev.length*100).toFixed(1)}%"></i></div>
+              <div class="row"><span>Прошло ${done} из ${ev.length}</span><span>${list.length} ${plural(list.length,"предмет","предмета","предметов")}</span></div></div>`;
+            list.forEach((s, i) => {
+              h += `<div class="subj" data-i="${i}"><div class="ttl">${esc(s.name)}</div>
+                <div class="meta">${ICON_USER}${esc([...s.teachers].map(teacherNames).join(", "))}</div>
+                <div class="bar"><i style="width:${(s.done/s.all.length*100).toFixed(1)}%"></i></div>
                 <div class="row"><span>Прошло ${s.done} из ${s.all.length}</span><span>осталось ${pairs(s.left)}</span></div>
                 <div class="nx">${s.next ? "Следующее: <b>"+fmtDate(s.next.date)+", "+s.next.start+"</b>"+(s.next.room ? " · "+esc(s.next.room) : "") : "Занятия по предмету закончились ✅"}</div></div>`;
             });
             box.innerHTML = h;
+            box.querySelectorAll(".subj").forEach(el => el.onclick = () => openSubject(list[+el.dataset.i]));
           }
 
           /* ---------- sheets ---------- */
           function openSheet(html){ document.getElementById("sheetBody").innerHTML = html; document.getElementById("veil").classList.add("on"); document.getElementById("sheet").classList.add("on"); }
-          function closeSheet(){ const s = document.getElementById("sheet"); if (!s.classList.contains("on")) return false; s.classList.remove("on"); document.getElementById("veil").classList.remove("on"); return true; }
+          function closeSheet(){ const s = document.getElementById("sheet"); if (!s.classList.contains("on")) return false; s.classList.remove("on"); document.getElementById("veil").classList.remove("on"); const a = document.activeElement; if (a && a.blur) a.blur(); return true; }
 
           function openLesson(l){
             const ev = semEvents().filter(e => e.name === l.name);
             const done = ev.filter(isDone).length;
-            const after = ev.filter(e => (e.date > l.date) || (e.date === l.date && toMin(e.start) > toMin(l.start)))
-              .sort((a,b) => (a.date+p4(toMin(a.start))).localeCompare(b.date+p4(toMin(b.start))))[0];
+            const after = ev.filter(e => evKey(e) > l.date + p4(toMin(l.start))).sort((a,b) => evKey(a).localeCompare(evKey(b)))[0];
+            const p = progressOf(l);
             let h = `<h2>${esc(l.name)}</h2>
               <div class="li"><span>Когда</span><b>${fmtDate(l.date)}, ${l.start} – ${l.end}${l.num ? " ("+l.num+" пара)" : ""}</b></div>
+              ${p > 0 && p < 1 ? `<div class="li"><span>Сейчас</span><b>прошло ${Math.round(p*100)}%, осталось ${dur(toMin(l.end) - nowMinF())}</b></div>` : ""}
               <div class="li"><span>Тип</span><b>${esc(l.kindT)}${l.sub ? ", подгруппа "+esc(l.sub) : ""}</b></div>
               ${l.room ? `<div class="li"><span>Аудитория</span><b>${esc(l.room)}</b></div>` : ""}
-              ${l.teacher ? `<div class="li"><span>Преподаватель</span><b>${esc(l.teacher)}</b></div>` : ""}`;
+              ${l.teacher ? `<div class="li"><span>Преподаватель</span><b>${esc(teacherFull(l.teacher))}</b></div>` : ""}`;
             if (ev.length) {
               h += `<div class="li"><span>За семестр</span><b>${ev.length} ${plural(ev.length,"занятие","занятия","занятий")}, прошло ${done}, осталось ${ev.length-done}</b></div>`;
               h += `<div class="li"><span>Следующее</span><b>${after ? fmtDate(after.date)+", "+after.start+(after.room ? " · "+esc(after.room) : "") : "больше нет"}</b></div>`;
@@ -724,24 +914,86 @@ jobs:
             openSheet(h);
           }
 
+          function openSubject(s){
+            const up = s.all.filter(e => !isDone(e));
+            let h = `<h2>${esc(s.name)}</h2>
+              <div class="li"><span>Преподаватели</span><b>${esc([...s.teachers].map(teacherFull).join("; "))}</b></div>
+              <div class="li"><span>Прогресс</span><b>прошло ${s.done} из ${s.all.length}, осталось ${pairs(s.left)}</b></div>
+              <h4>${up.length ? "Оставшиеся занятия" : "Все занятия прошли"}</h4>`;
+            up.forEach(e => { h += `<div class="li"><span>${fmtDate(e.date)}</span><b>${e.start}${e.room ? " · "+esc(e.room) : ""}</b></div>`; });
+            openSheet(h);
+          }
+
+          let searchTimer = null, searchSeq = 0;
           function openSettings(){
             const b = v => `<button data-s="${v}" class="${S.sub===v?"on":""}">${v==="all"?"Все":"Подгр. "+v}</button>`;
             openSheet(`<h2>Настройки</h2>
-              <div style="font-weight:600;margin-top:4px">Моя подгруппа</div>
+              <div style="font-weight:600">Группа <span class="cur-grp">${esc(S.group.name)}</span></div>
+              <input class="inp" id="gq" placeholder="Номер группы, например 7-1225" autocomplete="off" style="margin-top:10px">
+              <div class="res" id="gres"></div>
+              <p class="hint" id="ghint">Начните вводить номер — покажу подходящие группы.</p>
+              <h4>Моя подгруппа</h4>
               <div class="opt">${b("all")}${b("А")}${b("Б")}</div>
               <p class="hint">Занятия другой подгруппы будут скрыты. Общие пары показываются всегда.</p>`);
             document.querySelectorAll("#sheetBody [data-s]").forEach(x => x.onclick = () => {
               S.sub = x.dataset.s; store.set("sub", S.sub); openSettings(); renderAll();
             });
+            const q = document.getElementById("gq");
+            q.oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => searchGroups(q.value.trim()), 350); };
+          }
+          async function searchGroups(term){
+            const res = document.getElementById("gres"), hint = document.getElementById("ghint");
+            if (!res) return;
+            if (term.length < 2) { res.innerHTML = ""; hint.textContent = "Начните вводить номер — покажу подходящие группы."; return; }
+            const my = ++searchSeq;
+            hint.textContent = "Ищу…";
+            try {
+              const r = await httpGet(SITE + "/search?term=" + encodeURIComponent(term), true);
+              if (my !== searchSeq) return;
+              const names = JSON.parse(r.body).map(x => String(x.value || x.label || "")).filter(n => /^\d/.test(n)).slice(0, 12);
+              res.innerHTML = names.map(n => `<button data-g="${esc(n)}">Группа ${esc(n)}</button>`).join("");
+              hint.textContent = names.length ? "Выберите свою группу" : "Ничего не нашлось";
+              res.querySelectorAll("[data-g]").forEach(x => x.onclick = () => chooseGroup(x.dataset.g));
+            } catch (e) { if (my === searchSeq) hint.textContent = "Не получилось: " + errText(e); }
+          }
+          async function resolveGroupUrl(name){
+            const r = await httpGet(SITE + "/search?term=" + encodeURIComponent(name));
+            const m = (r.url || "").match(/\/timetables\/\d+\/groups\/[^/?#]+/);
+            if (!m) throw new Error("not-found");
+            return SITE + m[0];
+          }
+          async function chooseGroup(name){
+            const hint = document.getElementById("ghint");
+            if (hint) hint.textContent = "Открываю расписание группы " + name + "…";
+            try {
+              const url = await resolveGroupUrl(name);
+              setGroup({ name, url });
+              closeSheet();
+            } catch (e) { if (hint) hint.textContent = /not-found/.test(e.message) ? "Не нашёл расписание этой группы" : "Не получилось: " + errText(e); }
+          }
+          function setGroup(g){
+            const changed = g.name !== S.group.name || g.url !== S.group.url;
+            if (g.url !== S.group.url) store.keys().filter(k => k.startsWith("g:" + g.name + ":")).forEach(k => store.del(k));
+            S.group = g; store.set("group", g); store.set("groupChecked", Date.now());
+            if (!changed) return;
+            S.weeks = {}; S.ics = store.get(gk("ics"), null); S.icsErr = null; S.err = null;
+            S.monday = mondayOf(new Date()); S.sel = todayIso();
+            renderAll();
+            loadWeek(S.monday, true).then(() => { renderAll(); loadIcs(true); });
+          }
+          /* раз в сутки проверяем, не сменилась ли ссылка на расписание группы (новый семестр) */
+          async function recheckGroup(){
+            if (Date.now() - store.get("groupChecked", 0) < 864e5) return;
+            try { const url = await resolveGroupUrl(S.group.name); setGroup({ name: S.group.name, url }); } catch (e) {}
           }
 
           /* ---------- glue ---------- */
-          function renderAll(){ setStatus(); renderNow(); renderWeek(); renderDay(); if (document.getElementById("vSubj").classList.contains("on")) renderSubjects(); }
+          function renderAll(){ setStatus(); renderNow(); renderWeek(); renderDay(); renderSubjectsIfOpen(); }
+          function tick(){ renderNow(); renderWeek(); if (S.sel === todayIso()) renderDay(); renderSubjectsIfOpen(); }
 
           async function goWeek(delta){
             S.monday = addDays(S.monday, 7*delta);
-            const todayMon = iso(mondayOf(new Date())) === iso(S.monday);
-            S.sel = todayMon ? iso(new Date()) : iso(S.monday);
+            S.sel = iso(mondayOf(new Date())) === iso(S.monday) ? todayIso() : iso(S.monday);
             renderAll();
             await loadWeek(S.monday); renderAll();
           }
@@ -751,25 +1003,29 @@ jobs:
             if (iso(mondayOf(d)) !== iso(S.monday)) { S.monday = mondayOf(d); S.sel = iso(d); renderAll(); loadWeek(S.monday).then(renderAll); }
             else selectDay(iso(d));
           }
+          async function refreshAll(force){
+            const today = new Date();
+            const ok = await loadWeek(mondayOf(today), force);
+            if (iso(S.monday) !== iso(mondayOf(today))) await loadWeek(S.monday, force);
+            renderAll();
+            loadWeek(addDays(mondayOf(today), 7), force).then(renderWeek);   // следующая неделя — заранее
+            loadIcs(force);
+            return ok;
+          }
 
           document.getElementById("days").addEventListener("click", e => { const b = e.target.closest(".day"); if (b) selectDay(b.dataset.d); });
           document.getElementById("prevW").onclick = () => goWeek(-1);
           document.getElementById("nextW").onclick = () => goWeek(1);
-          document.getElementById("btnRef").onclick = async () => {
-            const today = new Date();
-            await Promise.all([loadWeek(S.monday, true), loadWeek(mondayOf(today), true), loadIcs(true)]);
-            renderAll();
-          };
+          document.getElementById("btnRef").onclick = () => refreshAll(true);
           document.getElementById("btnSet").onclick = openSettings;
           document.getElementById("veil").onclick = closeSheet;
           document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
             document.querySelectorAll("nav button").forEach(x => x.classList.toggle("on", x === b));
             document.querySelectorAll(".view").forEach(v => v.classList.toggle("on", v.id === b.dataset.v));
-            if (b.dataset.v === "vSubj") renderSubjects();
+            if (b.dataset.v === "vSubj") { renderSubjects(); loadIcs(); }
             window.scrollTo(0,0);
           });
 
-          /* swipe between days */
           let tx = null, ty = null;
           document.getElementById("dayBox").addEventListener("touchstart", e => { tx = e.touches[0].clientX; ty = e.touches[0].clientY; }, {passive:true});
           document.getElementById("dayBox").addEventListener("touchend", e => {
@@ -779,18 +1035,19 @@ jobs:
           });
 
           window.handleBack = () => closeSheet();
+          window.onAppResume = () => { tick(); refreshAll(false); };
 
           (async function init(){
-            renderAll();
-            // если сегодня воскресенье — сразу показываем следующую неделю
             const t = new Date();
             if (t.getDay() === 0) { S.monday = addDays(mondayOf(t), 7); S.sel = iso(S.monday); }
-            await loadWeek(mondayOf(t)); renderAll();
-            if (iso(S.monday) !== iso(mondayOf(t))) { await loadWeek(S.monday); renderAll(); }
-            // завтра может быть на следующей неделе
-            const tm = addDays(t, 1); if (iso(mondayOf(tm)) !== iso(mondayOf(t))) { await loadWeek(mondayOf(tm)); renderNow(); }
-            await loadIcs(); renderAll();
-            setInterval(() => { renderNow(); if (S.sel === iso(new Date())) renderDay(); }, 30000);
+            // сначала мгновенно показываем сохранённое
+            [mondayOf(t), S.monday, addDays(mondayOf(t),7)].forEach(m => { const c = store.get(gk("w:"+iso(m)), null); if (c) S.weeks[iso(m)] = c; });
+            renderAll();
+            await refreshAll(false);
+            recheckGroup();
+            resolveTeachers(Object.values(S.weeks).flatMap(w => w.lessons.map(l => l.teacher)));
+            setInterval(tick, 15000);
+            setInterval(() => { if (S.err && !S.loading) refreshAll(true); }, 60000);
           })();
           </script>
           </body>
