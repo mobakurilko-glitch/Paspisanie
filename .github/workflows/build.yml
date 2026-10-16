@@ -51,8 +51,8 @@ jobs:
                   applicationId = "ru.dalgau.raspisanie"
                   minSdk = 26
                   targetSdk = 34
-                  versionCode = 5
-                  versionName = "5.0"
+                  versionCode = 6
+                  versionName = "6.0"
               }
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
@@ -68,6 +68,7 @@ jobs:
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
               <application
                   android:label="Расписание"
                   android:usesCleartextTraffic="true"
@@ -88,11 +89,14 @@ jobs:
           package ru.dalgau.raspisanie
 
           import android.annotation.SuppressLint
+          import android.app.DownloadManager
+          import android.content.Context
           import android.content.Intent
           import android.content.res.Configuration
           import android.net.Uri
           import android.graphics.Color
           import android.os.Bundle
+          import android.os.Environment
           import android.webkit.JavascriptInterface
           import android.webkit.WebChromeClient
           import android.webkit.WebView
@@ -174,6 +178,55 @@ jobs:
                   @JavascriptInterface
                   fun post(id: String, url: String, form: String) = request(id, url, true, form)
 
+                  /** Скачивание файла в Загрузки/ДальГАУ/<папка>/<имя> через системный менеджер загрузок. Возвращает id загрузки или -1. */
+                  @JavascriptInterface
+                  fun download(url: String, folder: String, name: String, mime: String): Long {
+                      return try {
+                          val dm = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                          val clean = { x: String -> x.replace(Regex("[\\\\/:*?\"<>|\\n\\r\\t]"), "_").trim().take(80).ifEmpty { "file" } }
+                          val req = DownloadManager.Request(Uri.parse(url))
+                              .setTitle(name)
+                              .setDescription("ДальГАУ · " + folder)
+                              .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                              .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "ДальГАУ/" + clean(folder) + "/" + clean(name))
+                              .addRequestHeader("User-Agent", "Mozilla/5.0 (Linux; Android 13; Mobile) RaspisanieApp/6.0")
+                          if (mime.isNotEmpty()) req.setMimeType(mime)
+                          dm.enqueue(req)
+                      } catch (e: Exception) { -1L }
+                  }
+
+                  /** Состояние загрузки: done / running / failed / missing */
+                  @JavascriptInterface
+                  fun dlStatus(id: Long): String {
+                      return try {
+                          val dm = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                          dm.query(DownloadManager.Query().setFilterById(id)).use { c ->
+                              if (!c.moveToFirst()) return "missing"
+                              when (c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))) {
+                                  DownloadManager.STATUS_SUCCESSFUL -> "done"
+                                  DownloadManager.STATUS_FAILED -> "failed"
+                                  else -> "running"
+                              }
+                          }
+                      } catch (e: Exception) { "missing" }
+                  }
+
+                  /** Открыть скачанный файл в подходящей программе телефона */
+                  @JavascriptInterface
+                  fun openDownload(id: Long, mime: String): Boolean {
+                      return try {
+                          val dm = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                          val uri = dm.getUriForDownloadedFile(id) ?: return false
+                          val type = if (mime.isNotEmpty()) mime else (dm.getMimeTypeForDownloadedFile(id) ?: "*/*")
+                          val i = Intent(Intent.ACTION_VIEW).setDataAndType(uri, type)
+                              .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                          runOnUiThread {
+                              try { startActivity(Intent.createChooser(i, "Открыть файл")) } catch (e: Exception) {}
+                          }
+                          true
+                      } catch (e: Exception) { false }
+                  }
+
                   @JavascriptInterface
                   fun openUrl(url: String) {
                       runOnUiThread {
@@ -193,7 +246,7 @@ jobs:
                                   c.readTimeout = 45000
                                   c.instanceFollowRedirects = true
                                   c.setRequestProperty("User-Agent",
-                                      "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Mobile Safari/537.36 RaspisanieApp/5.0")
+                                      "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Mobile Safari/537.36 RaspisanieApp/6.0")
                                   c.setRequestProperty("Accept-Language", "ru-RU,ru;q=0.9")
                                   if (xhr) {
                                       c.setRequestProperty("X-Requested-With", "XMLHttpRequest")
@@ -552,7 +605,7 @@ jobs:
 
           <script>
           "use strict";
-          const APP_VERSION = "5.0";
+          const APP_VERSION = "6.0";
           const SITE = "https://dalgau.fliptable.ru";
           const SLOTS = ["8:00","9:45","11:30","14:00","15:45","17:30"];
           const DOW = ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"];
@@ -901,7 +954,7 @@ jobs:
             }
             if (!ls.length) {
               const wk = d.getDay()===0 || d.getDay()===6;
-              box.innerHTML = dayDeadlines(S.sel) + `<div class="empty"><div class="em">${wk ? "🛋️" : "🎈"}</div><b>${wk ? "Выходной" : "Пар нет"}</b>${DOW_FULL[(d.getDay()+6)%7]}, ${d.getDate()} ${MON[d.getMonth()]}</div>`;
+              box.innerHTML = `<div class="empty"><div class="em">${wk ? "🛋️" : "🎈"}</div><b>${wk ? "Выходной" : "Пар нет"}</b>${DOW_FULL[(d.getDay()+6)%7]}, ${d.getDate()} ${MON[d.getMonth()]}</div>`;
               return;
             }
             const t = nowMinF(), isToday = S.sel === todayIso();
@@ -914,7 +967,6 @@ jobs:
             else if (prog.every(p => p >= 1)) head = `<b>Все ${pairs(ls.length)} прошли</b><span>${ls[0].start} – ${ls[ls.length-1].end}</span>`;
             else head = `<b>${pairs(ls.length)}</b><span>${ls[0].start} – ${ls[ls.length-1].end} · в вузе ${dur(last-first)}</span>`;
             let h = `<div class="dprog"><div class="row">${head}</div><div class="bar">${prog.map(p => `<i style="--p:${Math.round(p*100)}%"></i>`).join("")}</div></div>`;
-            h += dayDeadlines(S.sel);
 
             const hideDone = P.hidePast && isToday && !S.showPast && doneN > 0 && doneN < ls.length;
             if (hideDone) h += `<div class="hidden-note">Скрыто прошедших: ${doneN} · <button id="showPast">показать</button></div>`;
@@ -941,7 +993,7 @@ jobs:
                 <div class="tm"><b>${l.start}</b><span>${l.end}</span>${l.num ? `<div class="n">${l.num} пара</div>` : ""}</div>
                 <div class="bd"><div class="ttl">${esc(l.name)}</div>
                   <div class="tags"><span class="tag">${esc(l.kindT)}</span>${l.sub ? `<span class="tag">Подгр. ${esc(l.sub)}</span>` : ""}
-                    ${(() => { const n = eventsForSubject(l.name, true).length; return n ? `<span class="etag">📝 ${n} ${plural(n,"задание","задания","заданий")}</span>` : ""; })()}
+                    ${courseForSubject(l.name) ? `<span class="etag" style="background:var(--mint);color:var(--mint-t)">📂 файлы</span>` : ""}
                     ${l.room ? `<span class="meta">${ICON_PIN}${esc(l.room)}</span>` : ""}</div>
                   ${l.teacher ? `<div class="meta who">${ICON_USER}${esc(teacherNames(l.teacher))}</div>` : ""}
                   ${progTxt}
@@ -950,14 +1002,6 @@ jobs:
             box.innerHTML = h;
             box.querySelectorAll(".lesson").forEach(el => el.onclick = () => openLesson(ls[+el.dataset.i]));
             const sp = $("showPast"); if (sp) sp.onclick = () => { S.showPast = true; renderDay(); };
-            box.querySelectorAll(".daydl [data-url]").forEach(el => el.onclick = () => openExt(el.dataset.url));
-          }
-
-          function dayDeadlines(di){
-            if (!E.data) return "";
-            const list = E.data.events.filter(e => iso(new Date(e.time*1000)) === di).sort((a,b) => a.time - b.time);
-            if (!list.length) return "";
-            return `<div class="daydl"><b>📌 Сдать в этот день · ЭИОС</b>${list.map(e => `<div data-url="${esc(e.url)}">${MOD_IC[e.mod] || "📌"} ${hhmm(new Date(e.time*1000))} — ${esc(e.name)} <span style="color:var(--muted)">· ${esc(e.course)}</span></div>`).join("")}</div>`;
           }
 
           /* ---------- предметы ---------- */
@@ -1024,11 +1068,11 @@ jobs:
               h += `<div class="li"><span>За семестр</span><b>${ev.length} ${plural(ev.length,"занятие","занятия","занятий")}, прошло ${done}, осталось ${ev.length-done}</b></div>`;
               h += `<div class="li"><span>Следующее</span><b>${after ? fmtDate(after.date)+", "+after.start+(after.room ? " · "+esc(after.room) : "") : "больше нет"}</b></div>`;
             }
-            const evs = eventsForSubject(l.name, false).sort((a,b) => a.time - b.time);
-            if (evs.length) h += `<div class="sec">Задания в ЭИОС</div>` + evs.map(dlHtml).join("");
-            else if (!E.acc) h += `<p class="hint" style="margin-top:14px">Подключите ЭИОС на вкладке «ЭИОС» — здесь появятся задания по этому предмету.</p>`;
+            const crs = courseForSubject(l.name);
+            if (crs) h += `<button class="pill solid onb-go" id="openCrs">📂 Файлы курса в ЭИОС</button>`;
+            else if (!E.acc) h += `<p class="hint" style="margin-top:14px">Подключите ЭИОС на вкладке «ЭИОС» — здесь появится кнопка с файлами этого предмета.</p>`;
             openSheet(h);
-            bindLinks($("sheetBody"));
+            if (crs) $("openCrs").onclick = () => { closeSheet(); openCourse(crs); };
           }
           function openSubject(s){
             const up = s.all.filter(e => !isDone(e));
@@ -1141,8 +1185,8 @@ jobs:
               </div>
               <div class="sem">
                 <div class="sec" style="margin-top:0">ЭИОС (eiop.dalgau.ru)</div>
-                <p class="hint" style="margin:0 0 4px">${E.acc ? "Вы вошли как " + esc(E.acc.fullname || E.acc.login) : "Не подключено — задания и оценки не показываются"}</p>
-                <button class="linkbtn" id="setEios">${E.acc ? "Открыть задания и курсы" : "Подключить ЭИОС"}</button>
+                <p class="hint" style="margin:0 0 4px">${E.acc ? "Вы вошли как " + esc(E.acc.fullname || E.acc.login) : "Не подключено — курсы и файлы не показываются"}</p>
+                <button class="linkbtn" id="setEios">${E.acc ? "Открыть курсы и файлы" : "Подключить ЭИОС"}</button>
                 ${E.acc ? `<button class="linkbtn danger" id="setEiosOut">Выйти из ЭИОС</button>` : ""}
               </div>
               <div class="sem">
@@ -1170,9 +1214,10 @@ jobs:
             $("setReset").onclick = () => { if (!confirm("Сбросить все настройки и выбрать группу заново?")) return; try { localStorage.clear(); } catch(e) {} location.reload(); };
           }
 
-          /* ---------- ЭИОС (Moodle) ---------- */
+          /* ---------- ЭИОС (Moodle): курсы и файлы ---------- */
           const EIOS = "https://eiop.dalgau.ru";
-          const E = { acc: store.get("eios", null), data: store.get("eiosData", null), loading: false, err: null, tab: "dl", busyLogin: false };
+          const E = { acc: store.get("eios", null), courses: store.get("eiosCourses", null), loading: false, err: null, busyLogin: false, open: null, cLoading: false, cErr: null };
+          const DL = store.get("dl", {});                      // fileurl -> {id, mime, name}
           const form = obj => Object.entries(obj).map(([k,v]) => encodeURIComponent(k)+"="+encodeURIComponent(v)).join("&");
           function openExt(url){ if (!url) return; try { if (window.Native && Native.openUrl) Native.openUrl(url); else window.open(url, "_blank"); } catch(e) {} }
           async function moodle(fn, params){
@@ -1181,6 +1226,10 @@ jobs:
             let j; try { j = JSON.parse(r.body); } catch (e) { throw new Error("ЭИОС прислала не то, что ожидалось"); }
             if (j && j.exception) { const e = new Error(j.message || j.errorcode); e.code = j.errorcode; throw e; }
             return j;
+          }
+          function eiosErr(e){
+            if (e.code === "invalidtoken") { E.acc = null; store.del("eios"); return "Вход в ЭИОС устарел — войдите снова"; }
+            return e.code ? (e.message || e.code) : errText(e).replace("сайт вуза", "ЭИОС");
           }
           async function eiosLogin(user, pass){
             const r = await httpPost(EIOS + "/login/token.php", form({ username: user, password: pass, service: "moodle_mobile_app" }));
@@ -1191,56 +1240,100 @@ jobs:
             E.acc.userid = si.userid; E.acc.fullname = si.fullname;
             store.set("eios", E.acc);
           }
-          function eiosLogout(){ E.acc = null; E.data = null; E.err = null; store.del("eios"); store.del("eiosData"); renderEiosIfOpen(); renderDay(); if ($("vSet").classList.contains("on")) renderSettings(); }
+          function eiosLogout(){
+            E.acc = null; E.courses = null; E.err = null; E.open = null;
+            store.del("eios"); store.del("eiosCourses"); store.keys().filter(k => k.startsWith("ec:")).forEach(k => store.del(k));
+            renderEiosIfOpen(); renderDay(); if ($("vSet").classList.contains("on")) renderSettings();
+          }
           async function loadEios(force){
             if (!E.acc || E.loading) return;
-            if (E.data && !force && Date.now() - E.data.ts < 20*60*1000) return;
+            if (E.courses && !force && Date.now() - E.courses.ts < 60*60*1000) return;
             E.loading = true; E.err = null; renderEiosIfOpen();
             try {
-              const now = Math.floor(Date.now()/1000);
-              const [ev, courses, grades] = await Promise.all([
-                moodle("core_calendar_get_action_events_by_timesort", { timesortfrom: now - 14*86400, limitnum: 50 }),
-                moodle("core_enrol_get_users_courses", { userid: E.acc.userid }),
-                moodle("gradereport_overview_get_course_grades", {}).catch(() => ({ grades: [] }))
-              ]);
-              const gmap = {}; (grades.grades || []).forEach(g => gmap[g.courseid] = g.grade);
-              E.data = {
-                ts: Date.now(),
-                events: (ev.events || []).map(e => ({ id: e.id, name: e.name, time: e.timesort, course: e.course ? e.course.fullname : "", url: e.url || (e.action && e.action.url) || "", mod: e.modulename || "" })),
-                courses: (courses || []).map(c => ({ id: c.id, name: c.fullname, progress: c.progress, last: c.lastaccess, grade: gmap[c.id] || "", url: EIOS + "/course/view.php?id=" + c.id }))
-              };
-              store.set("eiosData", E.data);
-            } catch (e) {
-              if (e.code === "invalidtoken") { E.err = "Вход в ЭИОС устарел — войдите снова"; E.acc = null; store.del("eios"); }
-              else E.err = e.code ? (e.message || e.code) : errText(e).replace("сайт вуза", "ЭИОС");
-            }
+              const list = await moodle("core_enrol_get_users_courses", { userid: E.acc.userid });
+              E.courses = { ts: Date.now(), list: (list || []).map(c => ({ id: c.id, name: c.fullname, progress: c.progress, last: c.lastaccess })) };
+              store.set("eiosCourses", E.courses);
+            } catch (e) { E.err = eiosErr(e); }
             E.loading = false; renderEiosIfOpen(); renderDay();
           }
+
+          /* содержимое курса: разделы → файлы, папки, тесты, ссылки */
+          const FILE_MODS = { resource: 1, folder: 1 };
+          const ONLINE = { quiz: "Тест · онлайн", url: "Ссылка", page: "Страница", book: "Книга", lesson: "Лекция · онлайн", scorm: "Курс SCORM", h5pactivity: "Интерактив", hvp: "Интерактив", glossary: "Глоссарий", wiki: "Вики" };
+          async function loadCourse(id, force){
+            const key = "ec:" + id;
+            let c = store.get(key, null);
+            if (c && !force && Date.now() - c.ts < 6*3600*1000) return c;
+            const secs = await moodle("core_course_get_contents", { courseid: id });
+            c = { ts: Date.now(), sections: (secs || []).map(s => ({
+              name: (s.name || "").trim(),
+              items: (s.modules || []).filter(m => FILE_MODS[m.modname] || ONLINE[m.modname]).map(m => ({
+                mod: m.modname, name: m.name, url: m.url || "",
+                files: FILE_MODS[m.modname] ? (m.contents || []).filter(f => f.type === "file").map(f => ({ name: f.filename, url: f.fileurl, size: f.filesize || 0, mime: f.mimetype || "", path: (f.filepath || "/").replace(/^\/|\/$/g, "") })) : []
+              })).filter(m => !FILE_MODS[m.mod] || m.files.length)
+            })).filter(s => s.items.length) };
+            store.set(key, c);
+            return c;
+          }
+          const withToken = url => url + (url.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(E.acc.token);
+          function fileIcon(name){
+            const ext = (name.split(".").pop() || "").toLowerCase();
+            if (ext === "pdf") return "📕"; if (/^docx?|rtf|odt$/.test(ext)) return "📘"; if (/^pptx?|odp$/.test(ext)) return "📙";
+            if (/^xlsx?|ods|csv$/.test(ext)) return "📗"; if (/^(png|jpe?g|gif|bmp|webp)$/.test(ext)) return "🖼️"; if (/^(zip|rar|7z)$/.test(ext)) return "🗜️";
+            if (/^(mp4|avi|mov|mkv)$/.test(ext)) return "🎬"; if (/^(mp3|wav|ogg)$/.test(ext)) return "🎧"; return "📄";
+          }
+          const fmtSize = b => b >= 1048576 ? (b/1048576).toFixed(1).replace(".", ",") + " МБ" : b >= 1024 ? Math.round(b/1024) + " КБ" : b ? b + " Б" : "";
+          const ONLINE_IC = { quiz: "✅", url: "🔗", page: "📃", book: "📖", lesson: "📖", scorm: "🎓", h5pactivity: "🧩", hvp: "🧩", glossary: "🔤", wiki: "📝" };
+          function dlState(f){
+            const d = DL[f.url]; if (!d) return "none";
+            if (!(window.Native && Native.dlStatus)) return "done";
+            const st = Native.dlStatus(d.id);
+            if (st === "missing" || st === "failed") { delete DL[f.url]; store.set("dl", DL); return st === "failed" ? "failed" : "none"; }
+            return st;
+          }
+          function startDownload(f, folder, openAfter){
+            if (!(window.Native && Native.download)) { openExt(withToken(f.url)); return; }
+            const id = Native.download(withToken(f.url), folder, f.name, f.mime || "");
+            if (id < 0) { alert("Не получилось начать загрузку"); return; }
+            DL[f.url] = { id, mime: f.mime || "", name: f.name, open: !!openAfter };
+            store.set("dl", DL);
+            pollDownloads();
+          }
+          function openFile(f){
+            const d = DL[f.url];
+            if (d && window.Native && Native.openDownload && Native.openDownload(d.id, d.mime || "")) return;
+            alert("Файл не найден — скачаю заново"); delete DL[f.url]; store.set("dl", DL);
+          }
+          let pollTimer = null;
+          function pollDownloads(){
+            if (pollTimer) return;
+            pollTimer = setInterval(() => {
+              let running = 0;
+              Object.entries(DL).forEach(([url, d]) => {
+                const st = window.Native && Native.dlStatus ? Native.dlStatus(d.id) : "done";
+                if (st === "running") running++;
+                else if (st === "done" && d.open) { d.open = false; store.set("dl", DL); Native.openDownload(d.id, d.mime || ""); }
+              });
+              if (E.open) renderCourseFiles();
+              if (!running) { clearInterval(pollTimer); pollTimer = null; }
+            }, 1500);
+          }
+
+          /* связь пар с курсами */
           const normName = s => (s||"").toLowerCase().replace(/ё/g,"е").replace(/\([^)]*\)/g," ").replace(/[^a-zа-я0-9]+/g," ").trim();
-          function eventsForSubject(name, upcomingOnly){
-            if (!E.data) return [];
-            const n = normName(name); if (n.length < 4) return [];
-            const now = Date.now()/1000;
-            return E.data.events.filter(e => { const c = normName(e.course); return c && (c.includes(n) || n.includes(c)) && (!upcomingOnly || e.time >= now); });
+          function courseForSubject(name){
+            if (!E.courses) return null;
+            const n = normName(name); if (n.length < 4) return null;
+            return E.courses.list.find(c => { const cn = normName(c.name); return cn && (cn.includes(n) || n.includes(cn)); }) || null;
           }
-          const MOD_IC = { assign:"📝", quiz:"✅", forum:"💬", workshop:"🛠️", lesson:"📖", feedback:"📋", choice:"☑️", scorm:"🎓" };
-          function dlWhen(t){
-            const d = t - Date.now()/1000, dt = new Date(t*1000);
-            const date = DOW[(dt.getDay()+6)%7] + ", " + dt.getDate() + " " + MON[dt.getMonth()] + " в " + hhmm(dt);
-            const days = Math.ceil(d/86400);
-            if (d < 0) return { cls: "over", txt: "просрочено · срок был " + date };
-            if (d < 86400) return { cls: "soon", txt: "осталось " + dur(d/60) + " · " + date };
-            if (days <= 3) return { cls: "soon", txt: "через " + days + " " + plural(days,"день","дня","дней") + " · " + date };
-            return { cls: "far", txt: date + " · через " + days + " " + plural(days,"день","дня","дней") };
-          }
-          function dlHtml(e){ const w = dlWhen(e.time); return `<div class="dl ${w.cls}" data-url="${esc(e.url)}"><div class="ic">${MOD_IC[e.mod] || "📌"}</div><div class="bd"><div class="ttl">${esc(e.name)}</div><div class="crs">${esc(e.course)}</div><div class="when">${w.txt}</div></div></div>`; }
-          function bindLinks(box){ box.querySelectorAll("[data-url]").forEach(el => el.onclick = () => openExt(el.dataset.url)); }
+          function openCourse(c){ E.open = c; E.cErr = null; E.cLoading = false; switchView("vEios"); }
+
           function renderEiosIfOpen(){ if ($("vEios").classList.contains("on")) renderEios(); }
           function renderEios(){
             const box = $("eiosBox");
             if (!E.acc) {
               box.innerHTML = `<div class="sem">
-                <p class="intro" style="margin:0 0 12px">Войдите в электронную среду вуза (eiop.dalgau.ru) — и здесь появятся ваши задания со сроками сдачи, тесты, курсы и оценки. Задания будут видны и на карточках пар в расписании.</p>
+                <p class="intro" style="margin:0 0 12px">Войдите в электронную среду вуза (eiop.dalgau.ru) — здесь появятся ваши курсы со всеми файлами: лекции, методички, презентации. Их можно скачать на телефон и открывать без интернета.</p>
                 <div class="sec" style="margin-top:0">Логин ЭИОС</div>
                 <input class="inp" id="eu" autocomplete="username" autocapitalize="off" spellcheck="false" value="${esc(store.get("eiosLogin", ""))}">
                 <div class="sec">Пароль</div>
@@ -1257,35 +1350,85 @@ jobs:
                 if (E.busyLogin) return;
                 E.busyLogin = true; $("ego").textContent = "Вхожу…"; $("eerr").textContent = "";
                 try { await eiosLogin(u, p); store.set("eiosLogin", u); E.err = null; E.busyLogin = false; renderEios(); loadEios(true); }
-                catch (e) { E.busyLogin = false; E.err = e.code === "invalidlogin" ? "Неверный логин или пароль" : (e.code ? e.message : errText(e).replace("сайт вуза", "ЭИОС")); renderEios(); }
+                catch (e) { E.busyLogin = false; E.err = e.code === "invalidlogin" ? "Неверный логин или пароль" : eiosErr(e); renderEios(); }
               };
               return;
             }
-            const d = E.data, now = Date.now()/1000;
+            if (E.open) { renderCourseFiles(); return; }
             const ini = (E.acc.fullname || E.acc.login || "?").split(" ").map(x => x[0]).slice(0,2).join("");
-            let h = `<div class="sem"><div class="user-card"><div class="ava">${esc(ini)}</div><div style="flex:1;min-width:0"><b>${esc(E.acc.fullname || E.acc.login)}</b><div class="hint" style="margin:2px 0 0">${E.loading ? "Обновляю данные ЭИОС…" : d ? "Обновлено в " + hhmm(new Date(d.ts)) : ""}</div></div>
+            let h = `<div class="sem"><div class="user-card"><div class="ava">${esc(ini)}</div><div style="flex:1;min-width:0"><b>${esc(E.acc.fullname || E.acc.login)}</b><div class="hint" style="margin:2px 0 0">${E.loading ? "Обновляю список курсов…" : E.courses ? "Курсов: " + E.courses.list.length : ""}</div></div>
               <button class="iconbtn" id="eref" style="background:var(--mint)"><svg viewBox="0 0 24 24" style="stroke:var(--mint-t)"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg></button></div>
               ${E.err ? `<p class="hint" style="color:#C0392B">${esc(E.err)}</p>` : ""}</div>`;
-            if (!d) { box.innerHTML = h + `<div class="empty"><div class="em">⏳</div><b>Загружаю задания и курсы</b></div>`; $("eref").onclick = () => loadEios(true); return; }
-            const upcoming = d.events.filter(e => e.time >= now).sort((a,b) => a.time - b.time);
-            const over = d.events.filter(e => e.time < now).sort((a,b) => b.time - a.time);
-            h += `<div class="tabs2"><button data-et="dl" class="${E.tab==="dl"?"on":""}">Задания · ${upcoming.length + over.length}</button><button data-et="cr" class="${E.tab==="cr"?"on":""}">Курсы · ${d.courses.length}</button></div>`;
-            if (E.tab === "dl") {
-              if (!upcoming.length && !over.length) h += `<div class="empty"><div class="em">🎉</div><b>Нет заданий со сроком</b>Всё сдано или сроки ещё не назначены</div>`;
-              if (over.length) h += `<div class="sec">Просрочено</div>` + over.map(dlHtml).join("");
-              if (upcoming.length) h += `<div class="sec">Ближайшие сроки</div>` + upcoming.map(dlHtml).join("");
-            } else {
-              const cs = d.courses.slice().sort((a,b) => (b.last||0) - (a.last||0));
-              h += cs.map(c => `<div class="crs-row" data-url="${esc(c.url)}"><div class="top"><div class="nm">${esc(c.name)}</div>${c.grade ? `<div class="gr">${esc(c.grade)}</div>` : ""}</div>
-                ${typeof c.progress === "number" ? `<div class="bar2"><i style="width:${Math.round(c.progress)}%"></i></div><div class="row2"><span>Пройдено ${Math.round(c.progress)}%</span><span>${c.last ? "заходили " + new Date(c.last*1000).getDate() + " " + MON_S[new Date(c.last*1000).getMonth()] : ""}</span></div>` : ""}</div>`).join("") || `<div class="empty"><div class="em">📚</div><b>Курсов не найдено</b></div>`;
-            }
+            if (!E.courses) { box.innerHTML = h + `<div class="empty"><div class="em">⏳</div><b>Загружаю курсы</b></div>`; $("eref").onclick = () => loadEios(true); return; }
+            // сначала курсы предметов из расписания, потом остальные по дате захода
+            const inSched = new Set();
+            Object.values(S.weeks).forEach(w => w.lessons.forEach(l => { const c = courseForSubject(l.name); if (c) inSched.add(c.id); }));
+            const cs = E.courses.list.slice().sort((a,b) => (inSched.has(b.id) - inSched.has(a.id)) || ((b.last||0) - (a.last||0)));
+            h += `<div class="sec">Мои курсы</div>`;
+            h += cs.map((c, i) => `<div class="crs-row" data-ci="${i}"><div class="top"><div class="nm">📂 ${esc(c.name)}</div>${inSched.has(c.id) ? `<span class="etag" style="background:var(--mint);color:var(--mint-t)">в расписании</span>` : ""}</div>
+              ${typeof c.progress === "number" ? `<div class="bar2"><i style="width:${Math.round(c.progress)}%"></i></div><div class="row2"><span>Пройдено ${Math.round(c.progress)}%</span><span>${store.get("ec:" + c.id, null) ? "есть офлайн" : ""}</span></div>` : ""}</div>`).join("")
+              || `<div class="empty"><div class="em">📚</div><b>Курсов не найдено</b></div>`;
             h += `<button class="linkbtn" id="eopen">Открыть ЭИОС в браузере</button><button class="linkbtn danger" id="eout">Выйти из ЭИОС</button>`;
             box.innerHTML = h;
-            bindLinks(box);
-            box.querySelectorAll("[data-et]").forEach(b => b.onclick = () => { E.tab = b.dataset.et; renderEios(); });
+            box.querySelectorAll("[data-ci]").forEach(el => el.onclick = () => { E.open = cs[+el.dataset.ci]; E.cErr = null; E.cLoading = false; renderEios(); window.scrollTo(0,0); });
             $("eref").onclick = () => loadEios(true);
             $("eopen").onclick = () => openExt(EIOS + "/my/");
             $("eout").onclick = () => { if (confirm("Выйти из ЭИОС в приложении?")) eiosLogout(); };
+          }
+
+          async function openCourseData(force){
+            const c = E.open; if (!c) return;
+            E.cLoading = true; E.cErr = null; renderCourseFiles();
+            try { c.data = await loadCourse(c.id, force); } catch (e) { E.cErr = eiosErr(e); c.data = store.get("ec:" + c.id, null); }
+            E.cLoading = false; renderCourseFiles();
+          }
+          function renderCourseFiles(){
+            if (!$("vEios").classList.contains("on") || !E.open) return;
+            const c = E.open, box = $("eiosBox");
+            if (!c.data && !E.cLoading && !E.cErr) { c.data = store.get("ec:" + c.id, null); openCourseData(false); if (!c.data) return; }
+            let h = `<button class="linkbtn" id="eback" style="border-top:0;padding-top:0">‹ Все курсы</button>
+              <div class="sem"><h3 style="text-transform:none">${esc(c.name)}</h3>`;
+            const d = c.data;
+            const files = d ? d.sections.flatMap(s => s.items.flatMap(it => it.files)) : [];
+            const states = files.map(dlState);
+            const done = states.filter(x => x === "done").length, running = states.filter(x => x === "running").length;
+            const total = files.reduce((a, f) => a + f.size, 0);
+            if (d) {
+              h += `<p>${files.length} ${plural(files.length,"файл","файла","файлов")}${total ? " · " + fmtSize(total) : ""} · скачано ${done}${running ? " · качается " + running : ""}</p>
+                ${files.length ? `<div class="bar2"><i style="width:${files.length ? (done/files.length*100).toFixed(1) : 0}%"></i></div>` : ""}
+                ${files.length && done < files.length ? `<button class="pill solid onb-go" id="eall" style="margin-top:10px">${running ? "Скачиваю…" : done ? "Докачать остальные (" + (files.length - done) + ")" : "⬇ Скачать все файлы"}</button>` : files.length ? `<p class="hint">✓ Все файлы на телефоне: Загрузки › ДальГАУ › ${esc(c.name.slice(0,40))}</p>` : ""}`;
+            }
+            h += `${E.cLoading ? `<p class="hint">Загружаю содержимое курса…</p>` : ""}${E.cErr ? `<p class="hint" style="color:#C0392B">${esc(E.cErr)}${d ? " · показана сохранённая версия" : ""}</p>` : ""}
+              ${!E.cLoading ? `<button class="linkbtn" id="ecref">↻ Обновить содержимое курса</button>` : ""}</div>`;
+            if (d) {
+              let fi = 0;
+              d.sections.forEach(s => {
+                h += `<div class="sec">${esc(s.name || "Общее")}</div>`;
+                s.items.forEach(it => {
+                  if (it.files.length) {
+                    it.files.forEach(f => {
+                      const st = states[fi], idx = fi++;
+                      const label = it.files.length > 1 || it.mod === "folder" ? it.name + " › " + f.name : (it.name === f.name ? f.name : it.name);
+                      const right = st === "done" ? "✓ открыть" : st === "running" ? "⏳ качается" : st === "failed" ? "⚠ повторить" : "⬇ " + fmtSize(f.size);
+                      h += `<div class="dl ${st === "done" ? "far" : ""}" data-fi="${idx}" style="--c:${st === "done" ? "var(--accent)" : "var(--line)"}"><div class="ic">${fileIcon(f.name)}</div><div class="bd"><div class="ttl">${esc(label)}</div><div class="when" style="color:${st === "done" ? "var(--accent)" : "var(--muted)"}">${right}</div></div></div>`;
+                    });
+                  } else {
+                    h += `<div class="dl" data-ou="${esc(it.url)}" style="--c:var(--pr)"><div class="ic">${ONLINE_IC[it.mod] || "🔗"}</div><div class="bd"><div class="ttl">${esc(it.name)}</div><div class="when">${ONLINE[it.mod]} · откроется на сайте</div></div></div>`;
+                  }
+                });
+              });
+              if (!d.sections.length) h += `<div class="empty"><div class="em">🗂️</div><b>В курсе нет файлов</b></div>`;
+            }
+            box.innerHTML = h;
+            $("eback").onclick = () => { E.open = null; renderEios(); window.scrollTo(0,0); };
+            if ($("ecref")) $("ecref").onclick = () => openCourseData(true);
+            const folder = c.name;
+            box.querySelectorAll("[data-fi]").forEach(el => el.onclick = () => {
+              const f = files[+el.dataset.fi], st = dlState(f);
+              if (st === "done") openFile(f); else if (st !== "running") { startDownload(f, folder, true); renderCourseFiles(); }
+            });
+            box.querySelectorAll("[data-ou]").forEach(el => el.onclick = () => openExt(el.dataset.ou));
+            const all = $("eall"); if (all) all.onclick = () => { files.forEach(f => { const st = dlState(f); if (st === "none" || st === "failed") startDownload(f, folder, false); }); renderCourseFiles(); };
           }
 
           /* ---------- склейка ---------- */
@@ -1296,7 +1439,7 @@ jobs:
             document.querySelectorAll(".view").forEach(x => x.classList.toggle("on", x.id === v));
             if (v === "vSubj") { renderSubjects(); loadIcs(); }
             if (v === "vSet") renderSettings();
-            if (v === "vEios") { renderEios(); loadEios(); }
+            if (v === "vEios") { renderEios(); loadEios(); if (E.open) pollDownloads(); }
             window.scrollTo(0,0);
           }
           async function goWeek(delta){
@@ -1340,6 +1483,7 @@ jobs:
 
           window.handleBack = () => {
             if (closeSheet()) return true;
+            if ($("vEios").classList.contains("on") && E.open) { E.open = null; renderEios(); return true; }
             if ($("onb").classList.contains("on")) return false;
             if (!$("vSched").classList.contains("on")) { switchView("vSched"); return true; }
             return false;
