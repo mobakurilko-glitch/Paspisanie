@@ -1016,19 +1016,21 @@ jobs:
           /* ---------- первый вход ---------- */
           function showOnboarding(){
             $("onb").classList.add("on");
-            let picked = null, sub = S.sub || "all";
+            let picked = null, sub = S.sub || "all", pickSeq = 0;
             const subBtns = () => { $("osub").innerHTML = ["all","А","Б"].map(v => `<button data-s="${v}" class="${sub===v?"on":""}">${v==="all"?"Все":"Подгруппа "+v}</button>`).join("");
               $("osub").querySelectorAll("[data-s]").forEach(b => b.onclick = () => { sub = b.dataset.s; subBtns(); }); };
             subBtns();
             groupSearch($("oq"), $("ores"), $("ohint"), async (name) => {
-              picked = null; $("ogo").disabled = true;
+              const my = ++pickSeq; picked = null; $("ogo").disabled = true;
               $("ook").className = "onb-ok on"; $("ook").textContent = "Открываю расписание группы " + name + "…";
               try {
                 const url = await resolveGroupUrl(name);
+                if (my !== pickSeq) return;
                 picked = { name, url };
                 $("ook").textContent = "✓ Группа " + name + " найдена";
                 $("ogo").disabled = false;
               } catch (e) {
+                if (my !== pickSeq) return;
                 $("ook").textContent = /not-found/.test(e.message) ? "Не нашёл расписание этой группы" : "Не получилось: " + errText(e);
               }
             });
