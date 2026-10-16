@@ -18,8 +18,8 @@ jobs:
           gradle-version: "8.9"
       - name: Create project
         run: |
-          mkdir -p app/src/main/java/ru/dalgau/raspisanie
-          cat > settings.gradle.kts <<'EOF'
+          mkdir -p app app/src/main app/src/main/assets app/src/main/java/ru/dalgau/raspisanie app/src/main/res/drawable app/src/main/res/mipmap-anydpi-v26 app/src/main/res/values
+          cat > settings.gradle.kts <<'RASP_EOF'
           pluginManagement {
               repositories { google(); mavenCentral(); gradlePluginPortal() }
           }
@@ -28,18 +28,18 @@ jobs:
           }
           rootProject.name = "Raspisanie"
           include(":app")
-          EOF
-          cat > build.gradle.kts <<'EOF'
+          RASP_EOF
+          cat > build.gradle.kts <<'RASP_EOF'
           plugins {
               id("com.android.application") version "8.5.2" apply false
               id("org.jetbrains.kotlin.android") version "1.9.24" apply false
           }
-          EOF
-          cat > gradle.properties <<'EOF'
+          RASP_EOF
+          cat > gradle.properties <<'RASP_EOF'
           android.useAndroidX=true
           org.gradle.jvmargs=-Xmx2g
-          EOF
-          cat > app/build.gradle.kts <<'EOF'
+          RASP_EOF
+          cat > app/build.gradle.kts <<'RASP_EOF'
           plugins {
               id("com.android.application")
               id("org.jetbrains.kotlin.android")
@@ -49,10 +49,10 @@ jobs:
               compileSdk = 34
               defaultConfig {
                   applicationId = "ru.dalgau.raspisanie"
-                  minSdk = 24
+                  minSdk = 26
                   targetSdk = 34
-                  versionCode = 1
-                  versionName = "1.0"
+                  versionCode = 2
+                  versionName = "2.0"
               }
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
@@ -62,20 +62,19 @@ jobs:
           }
           dependencies {
               implementation("androidx.appcompat:appcompat:1.7.0")
-              implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
           }
-          EOF
-          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          RASP_EOF
+          cat > app/src/main/AndroidManifest.xml <<'RASP_EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.INTERNET" />
-              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
               <application
-                  android:label="Расписание ДальГАУ"
-                  android:icon="@android:drawable/ic_menu_my_calendar"
+                  android:label="Расписание"
+                  android:icon="@mipmap/ic_launcher"
+                  android:roundIcon="@mipmap/ic_launcher"
                   android:theme="@style/Theme.AppCompat.DayNight.NoActionBar">
                   <activity android:name=".MainActivity" android:exported="true"
-                      android:configChanges="orientation|screenSize|keyboardHidden">
+                      android:configChanges="orientation|screenSize|keyboardHidden|uiMode">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
                           <category android:name="android.intent.category.LAUNCHER" />
@@ -83,75 +82,719 @@ jobs:
                   </activity>
               </application>
           </manifest>
-          EOF
-          cat > app/src/main/java/ru/dalgau/raspisanie/MainActivity.kt <<'EOF'
+          RASP_EOF
+          cat > app/src/main/java/ru/dalgau/raspisanie/MainActivity.kt <<'RASP_EOF'
           package ru.dalgau.raspisanie
 
           import android.annotation.SuppressLint
-          import android.content.Intent
-          import android.net.ConnectivityManager
-          import android.net.NetworkCapabilities
+          import android.content.res.Configuration
+          import android.graphics.Color
           import android.os.Bundle
-          import android.webkit.WebResourceRequest
-          import android.webkit.WebSettings
+          import android.webkit.JavascriptInterface
           import android.webkit.WebView
           import android.webkit.WebViewClient
           import androidx.activity.OnBackPressedCallback
           import androidx.appcompat.app.AppCompatActivity
-          import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+          import androidx.core.view.WindowCompat
+          import org.json.JSONObject
+          import java.net.HttpURLConnection
+          import java.net.URL
+          import kotlin.concurrent.thread
 
           class MainActivity : AppCompatActivity() {
-              private val scheduleUrl = "https://dalgau.fliptable.ru/timetables/7113/groups/7-1224--9"
+
               private lateinit var webView: WebView
-              private lateinit var swipe: SwipeRefreshLayout
 
               @SuppressLint("SetJavaScriptEnabled")
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
+
+                  val dark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                          Configuration.UI_MODE_NIGHT_YES
+                  val bg = if (dark) Color.parseColor("#0F1115") else Color.parseColor("#F4F5F8")
+                  val bar = if (dark) Color.parseColor("#1A1D24") else Color.WHITE
+                  window.statusBarColor = bg
+                  window.navigationBarColor = bar
+                  WindowCompat.getInsetsController(window, window.decorView).apply {
+                      isAppearanceLightStatusBars = !dark
+                      isAppearanceLightNavigationBars = !dark
+                  }
+
                   webView = WebView(this)
-                  swipe = SwipeRefreshLayout(this)
-                  swipe.addView(webView)
-                  setContentView(swipe)
+                  webView.setBackgroundColor(bg)
+                  setContentView(webView)
 
                   webView.settings.javaScriptEnabled = true
                   webView.settings.domStorageEnabled = true
-                  webView.settings.cacheMode = if (isOnline()) WebSettings.LOAD_DEFAULT
-                      else WebSettings.LOAD_CACHE_ELSE_NETWORK
-
-                  webView.webViewClient = object : WebViewClient() {
-                      override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                          if (request.url.host == "dalgau.fliptable.ru") return false
-                          startActivity(Intent(Intent.ACTION_VIEW, request.url))
-                          return true
-                      }
-                      override fun onPageFinished(view: WebView, url: String?) {
-                          swipe.isRefreshing = false
-                      }
-                  }
-
-                  swipe.setOnRefreshListener {
-                      webView.settings.cacheMode = if (isOnline()) WebSettings.LOAD_DEFAULT
-                          else WebSettings.LOAD_CACHE_ELSE_NETWORK
-                      webView.reload()
-                  }
-                  swipe.setOnChildScrollUpCallback { _, _ -> webView.canScrollVertically(-1) }
+                  webView.webViewClient = WebViewClient()
+                  webView.addJavascriptInterface(Bridge(), "Native")
 
                   onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
                       override fun handleOnBackPressed() {
-                          if (webView.canGoBack()) webView.goBack() else finish()
+                          webView.evaluateJavascript("window.handleBack ? window.handleBack() : false") { r ->
+                              if (r != "true") finish()
+                          }
                       }
                   })
 
-                  webView.loadUrl(scheduleUrl)
+                  webView.loadUrl("file:///android_asset/index.html")
               }
 
-              private fun isOnline(): Boolean {
-                  val cm = getSystemService(ConnectivityManager::class.java)
-                  val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
-                  return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+              inner class Bridge {
+                  @JavascriptInterface
+                  fun fetch(id: String, url: String) {
+                      thread {
+                          var ok = false
+                          val body = try {
+                              val c = URL(url).openConnection() as HttpURLConnection
+                              c.connectTimeout = 15000
+                              c.readTimeout = 20000
+                              c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) RaspisanieApp/2.0")
+                              c.setRequestProperty("Accept-Language", "ru")
+                              val code = c.responseCode
+                              if (code in 200..299) {
+                                  ok = true
+                                  c.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                              } else "HTTP $code"
+                          } catch (e: Exception) {
+                              e.toString()
+                          }
+                          val js = "window.__nativeDone(${JSONObject.quote(id)}, $ok, ${JSONObject.quote(body)})"
+                          runOnUiThread { webView.evaluateJavascript(js, null) }
+                      }
+                  }
               }
           }
-          EOF
+          RASP_EOF
+          cat > app/src/main/res/values/colors.xml <<'RASP_EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <color name="ic_bg">#3B6CF6</color>
+          </resources>
+          RASP_EOF
+          cat > app/src/main/res/drawable/ic_fg.xml <<'RASP_EOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp" android:height="108dp"
+              android:viewportWidth="108" android:viewportHeight="108">
+              <path android:fillColor="#FFFFFF"
+                  android:pathData="M38,34h32a6,6 0,0 1,6 6v32a6,6 0,0 1,-6 6h-32a6,6 0,0 1,-6 -6v-32a6,6 0,0 1,6 -6z"/>
+              <path android:fillColor="#3B6CF6"
+                  android:pathData="M32,46h44v4h-44z"/>
+              <path android:fillColor="#FFFFFF"
+                  android:pathData="M42,28h4v12h-4zM62,28h4v12h-4z"/>
+              <path android:fillColor="#3B6CF6"
+                  android:pathData="M40,56h8v6h-8zM50,56h8v6h-8zM60,56h8v6h-8zM40,66h8v6h-8zM50,66h8v6h-8z"/>
+              <path android:fillColor="#14A06A"
+                  android:pathData="M60,66h8v6h-8z"/>
+          </vector>
+          RASP_EOF
+          cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml <<'RASP_EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/ic_bg"/>
+              <foreground android:drawable="@drawable/ic_fg"/>
+          </adaptive-icon>
+          RASP_EOF
+          cat > app/src/main/assets/index.html <<'RASP_EOF'
+          <!doctype html>
+          <html lang="ru">
+          <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+          <title>Расписание</title>
+          <style>
+          :root{
+            --bg:#F4F5F8; --card:#FFFFFF; --text:#14161C; --muted:#6B7180; --line:#E4E6EC;
+            --accent:#3B6CF6; --accent-soft:#E7EEFF;
+            --lec:#3B6CF6; --lec-soft:#E7EEFF;
+            --pr:#14A06A; --pr-soft:#E1F5EC;
+            --lab:#E8782A; --lab-soft:#FDEEE2;
+            --oth:#8A5CF0; --oth-soft:#F0E9FF;
+            --shadow:0 1px 2px rgba(20,22,28,.06),0 4px 14px rgba(20,22,28,.05);
+          }
+          @media (prefers-color-scheme: dark){
+            :root{
+              --bg:#0F1115; --card:#1A1D24; --text:#ECEEF3; --muted:#9097A6; --line:#2A2E38;
+              --accent:#7C9BFF; --accent-soft:#1F2741;
+              --lec:#7C9BFF; --lec-soft:#1F2741;
+              --pr:#3FD39B; --pr-soft:#15302A;
+              --lab:#FFA25E; --lab-soft:#38261A;
+              --oth:#B59BFF; --oth-soft:#2A2340;
+              --shadow:none;
+            }
+          }
+          *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+          html,body{margin:0;background:var(--bg);color:var(--text);
+            font-family:-apple-system,"Roboto","Segoe UI",sans-serif;font-size:15px;line-height:1.35}
+          body{padding-bottom:76px;overscroll-behavior-y:contain}
+          button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+
+          header{position:sticky;top:0;z-index:5;background:var(--bg);padding:14px 16px 8px}
+          .top{display:flex;align-items:center;gap:10px}
+          .top h1{font-size:22px;margin:0;font-weight:700;letter-spacing:-.3px;flex:1}
+          .top .grp{font-size:12px;color:var(--muted);font-weight:500;display:block;letter-spacing:0}
+          .iconbtn{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:var(--card);box-shadow:var(--shadow)}
+          .iconbtn svg{width:20px;height:20px;stroke:var(--text);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+          .spin svg{animation:spin 1s linear infinite}
+          @keyframes spin{to{transform:rotate(360deg)}}
+
+          .status{font-size:12px;color:var(--muted);margin:6px 0 0;min-height:16px}
+          .status.off{color:var(--lab)}
+
+          main{padding:0 16px}
+          .view{display:none}.view.on{display:block}
+
+          /* now card */
+          .now{border-radius:20px;padding:16px;margin:8px 0 14px;color:#fff;
+            background:linear-gradient(135deg,#3B6CF6,#6A4CF0);box-shadow:0 6px 20px rgba(59,108,246,.25)}
+          .now.rest{background:linear-gradient(135deg,#14A06A,#2BB8A0);box-shadow:0 6px 20px rgba(20,160,106,.22)}
+          .now.done{background:linear-gradient(135deg,#475066,#2E3445);box-shadow:none}
+          .now .lbl{font-size:12px;opacity:.85;text-transform:uppercase;letter-spacing:.6px;font-weight:600}
+          .now .big{font-size:20px;font-weight:700;margin:4px 0 2px;line-height:1.2}
+          .now .sub{font-size:14px;opacity:.92}
+          .now .bar{height:6px;border-radius:3px;background:rgba(255,255,255,.25);margin:12px 0 6px;overflow:hidden}
+          .now .bar i{display:block;height:100%;background:#fff;border-radius:3px}
+          .now .row{display:flex;justify-content:space-between;font-size:12px;opacity:.9}
+          .now .next{margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,.22);font-size:13px;opacity:.95}
+
+          /* week */
+          .week{display:flex;align-items:center;justify-content:space-between;margin:2px 0 10px}
+          .week .rng{font-weight:600}
+          .week .rng small{display:block;font-size:12px;color:var(--muted);font-weight:500;text-align:center}
+          .week button.arrow{width:34px;height:34px;border-radius:10px;background:var(--card);box-shadow:var(--shadow);font-size:20px;line-height:34px}
+          .days{display:grid;grid-template-columns:repeat(var(--n,6),1fr);gap:6px;margin-bottom:14px}
+          .day{background:var(--card);border-radius:14px;padding:8px 0 7px;text-align:center;box-shadow:var(--shadow);position:relative}
+          .day b{display:block;font-size:17px;margin-top:1px}
+          .day span{font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:600}
+          .day .dots{display:flex;justify-content:center;gap:3px;height:5px;margin-top:4px}
+          .day .dots i{width:5px;height:5px;border-radius:50%;background:var(--muted);opacity:.45}
+          .day.today span{color:var(--accent)}
+          .day.sel{background:var(--accent);box-shadow:0 4px 12px rgba(59,108,246,.3)}
+          .day.sel span,.day.sel b{color:#fff}.day.sel .dots i{background:#fff;opacity:.8}
+
+          .summary{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}
+          .pill{font-size:12px;padding:5px 10px;border-radius:999px;background:var(--card);color:var(--muted);box-shadow:var(--shadow);font-weight:500}
+          .pill b{color:var(--text)}
+
+          /* lessons */
+          .lesson{display:flex;gap:12px;background:var(--card);border-radius:16px;padding:12px 14px;margin-bottom:10px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+          .lesson::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--c)}
+          .lesson.past{opacity:.5}
+          .lesson.cur{outline:2px solid var(--c)}
+          .lesson .tm{min-width:50px;text-align:right}
+          .lesson .tm b{display:block;font-size:15px}
+          .lesson .tm span{font-size:12px;color:var(--muted)}
+          .lesson .tm .n{display:inline-block;margin-top:6px;font-size:11px;font-weight:700;color:var(--c);background:var(--cs);border-radius:6px;padding:1px 6px}
+          .lesson .bd{flex:1;min-width:0}
+          .lesson .ttl{font-weight:650;font-size:15px;margin-bottom:5px}
+          .tags{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+          .tag{font-size:12px;font-weight:600;padding:2px 8px;border-radius:7px;background:var(--cs);color:var(--c)}
+          .meta{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:4px}
+          .meta svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;flex:none}
+          .lesson .who{margin-top:6px}
+          .k-lec{--c:var(--lec);--cs:var(--lec-soft)}
+          .k-pr{--c:var(--pr);--cs:var(--pr-soft)}
+          .k-lab{--c:var(--lab);--cs:var(--lab-soft)}
+          .k-oth{--c:var(--oth);--cs:var(--oth-soft)}
+
+          .gap{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12px;margin:2px 0 12px 6px}
+          .gap::before,.gap::after{content:"";flex:1;height:1px;background:var(--line)}
+
+          .empty{text-align:center;padding:42px 20px;color:var(--muted)}
+          .empty .em{font-size:44px;margin-bottom:8px}
+          .empty b{display:block;color:var(--text);font-size:17px;margin-bottom:4px}
+
+          /* subjects */
+          .sem{background:var(--card);border-radius:18px;padding:16px;margin:8px 0 14px;box-shadow:var(--shadow)}
+          .sem h3{margin:0 0 4px;font-size:16px}
+          .sem p{margin:0;color:var(--muted);font-size:13px}
+          .sem .bar,.subj .bar{height:8px;background:var(--line);border-radius:4px;overflow:hidden;margin:12px 0 6px}
+          .sem .bar i,.subj .bar i{display:block;height:100%;background:var(--accent);border-radius:4px}
+          .sem .row{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
+          .subj{background:var(--card);border-radius:16px;padding:14px;margin-bottom:10px;box-shadow:var(--shadow)}
+          .subj .ttl{font-weight:650;margin-bottom:4px}
+          .subj .bar{height:6px;margin:10px 0 6px}
+          .subj .row{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
+          .subj .nx{font-size:13px;margin-top:8px}
+
+          /* nav */
+          nav{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);display:flex;padding:6px 8px 8px;z-index:6}
+          nav button{flex:1;padding:6px 0;border-radius:12px;font-size:12px;color:var(--muted);font-weight:600;display:flex;flex-direction:column;align-items:center;gap:2px}
+          nav button svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+          nav button.on{color:var(--accent)}
+
+          /* sheet */
+          .veil{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:10;opacity:0;pointer-events:none;transition:opacity .2s}
+          .veil.on{opacity:1;pointer-events:auto}
+          .sheet{position:fixed;left:0;right:0;bottom:0;z-index:11;background:var(--card);border-radius:22px 22px 0 0;padding:10px 18px 26px;
+            transform:translateY(105%);transition:transform .25s ease;max-height:85vh;overflow:auto}
+          .sheet.on{transform:none}
+          .sheet .grab{width:40px;height:4px;border-radius:2px;background:var(--line);margin:0 auto 14px}
+          .sheet h2{font-size:20px;margin:6px 0 10px;line-height:1.25}
+          .sheet .li{display:flex;gap:12px;padding:10px 0;border-top:1px solid var(--line);font-size:14px}
+          .sheet .li span{color:var(--muted);min-width:110px}
+          .sheet .li b{font-weight:600}
+          .opt{display:flex;gap:8px;margin:8px 0 4px}
+          .opt button{flex:1;padding:10px;border-radius:12px;background:var(--bg);font-weight:600}
+          .opt button.on{background:var(--accent);color:#fff}
+          .hint{font-size:12px;color:var(--muted);margin:6px 0 0}
+          </style>
+          </head>
+          <body>
+          <header>
+            <div class="top">
+              <h1>Расписание<span class="grp">Группа 7-1224 · ДальГАУ</span></h1>
+              <button class="iconbtn" id="btnSet" aria-label="Настройки"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+              <button class="iconbtn" id="btnRef" aria-label="Обновить"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg></button>
+            </div>
+            <p class="status" id="status"></p>
+          </header>
+
+          <main>
+            <section class="view on" id="vSched">
+              <div id="now"></div>
+              <div class="week">
+                <button class="arrow" id="prevW" aria-label="Прошлая неделя">‹</button>
+                <div class="rng" id="wRange"></div>
+                <button class="arrow" id="nextW" aria-label="Следующая неделя">›</button>
+              </div>
+              <div class="days" id="days"></div>
+              <div id="dayBox"></div>
+            </section>
+
+            <section class="view" id="vSubj">
+              <div id="subjBox"></div>
+            </section>
+          </main>
+
+          <nav>
+            <button class="on" data-v="vSched"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="3"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Расписание</button>
+            <button data-v="vSubj"><svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5V21h16"/></svg>Предметы</button>
+          </nav>
+
+          <div class="veil" id="veil"></div>
+          <div class="sheet" id="sheet"><div class="grab"></div><div id="sheetBody"></div></div>
+
+          <script>
+          "use strict";
+          const BASE = "https://dalgau.fliptable.ru/timetables/7113/groups/7-1224--9";
+          const SLOTS = ["8:00","9:45","11:30","14:00","15:45","17:30"];
+          const DOW = ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"];
+          const DOW_FULL = ["понедельник","вторник","среда","четверг","пятница","суббота","воскресенье"];
+          const MON = ["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
+          const MON_S = ["янв","фев","мар","апр","мая","июн","июл","авг","сен","окт","ноя","дек"];
+
+          /* ---------- storage ---------- */
+          const store = {
+            get(k, d){ try{ const v = localStorage.getItem(k); return v==null ? d : JSON.parse(v); }catch(e){ return d; } },
+            set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+          };
+
+          /* ---------- dates ---------- */
+          const pad = n => String(n).padStart(2,"0");
+          const iso = d => d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+          const fromIso = s => { const [y,m,d] = s.split("-").map(Number); return new Date(y, m-1, d); };
+          const addDays = (d,n) => { const x = new Date(d); x.setDate(x.getDate()+n); return x; };
+          const mondayOf = d => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); const w = (x.getDay()+6)%7; return addDays(x,-w); };
+          const toMin = t => { const [h,m] = t.split(":").map(Number); return h*60+m; };
+          const nowMin = () => { const n = new Date(); return n.getHours()*60+n.getMinutes(); };
+          function dur(min){
+            min = Math.max(0, Math.round(min));
+            const h = Math.floor(min/60), m = min%60;
+            if (!h) return m+" мин";
+            if (!m) return h+" ч";
+            return h+" ч "+m+" мин";
+          }
+          function plural(n, a, b, c){ const n10=n%10, n100=n%100;
+            if (n10===1 && n100!==11) return a; if (n10>=2&&n10<=4&&(n100<10||n100>=20)) return b; return c; }
+          const pairs = n => n+" "+plural(n,"пара","пары","пар");
+
+          /* ---------- kinds ---------- */
+          function kindOf(raw){
+            const s = (raw||"").replace(/\s+в\s*$/,"").trim().toUpperCase();
+            if (s.startsWith("ЛЕК")) return {k:"lec", t:"Лекция"};
+            if (s.startsWith("ПРАКТ")) return {k:"pr", t:"Практика"};
+            if (s.startsWith("ЛАБ")) return {k:"lab", t:"Лаба"};
+            if (!s) return {k:"oth", t:"Занятие"};
+            const t = s.charAt(0)+s.slice(1).toLowerCase().replace(/\.$/,"");
+            return {k:"oth", t};
+          }
+
+          /* ---------- parse week page ---------- */
+          function parseWeek(html, monday){
+            const doc = new DOMParser().parseFromString(html, "text/html");
+            let tables = doc.querySelectorAll(".media-lessons-table table.group_timetable");
+            if (!tables.length) tables = doc.querySelectorAll("table.group_timetable");
+            const seen = new Set(); const out = [];
+            let di = -1;
+            tables.forEach(tb => {
+              const dateTxt = (tb.querySelector(".date")||{}).textContent || "";
+              const key = dateTxt.trim();
+              if (seen.has(key)) return; seen.add(key);
+              di++;
+              const date = iso(addDays(monday, di));
+              let start = null, end = null;
+              tb.querySelectorAll("tbody > tr > td").forEach(td => {
+                const tp = td.querySelector("p.time");
+                if (tp){
+                  const h = [...tp.querySelectorAll(".hours")].map(x=>x.textContent.trim());
+                  const m = [...tp.querySelectorAll(".minutes")].map(x=>x.textContent.trim());
+                  start = h[0]+":"+m[0]; end = h[1]+":"+m[1];
+                  return;
+                }
+                if (!td.classList.contains("filled") || !start) return;
+                td.querySelectorAll(".lesson").forEach(ls => {
+                  const disc = ls.querySelector(":scope > .discipline");
+                  if (!disc) return;
+                  const subEl = disc.querySelector(".subgroup");
+                  const sub = subEl ? (subEl.getAttribute("title")||subEl.textContent).replace(/Подгруппа\s*/i,"").replace(/[()]/g,"").trim() : null;
+                  const name = (disc.getAttribute("title") || disc.textContent).replace(/\s+/g," ").trim();
+                  const kindEl = ls.querySelector(":scope > .kind");
+                  const roomEls = ls.querySelectorAll(":scope > .classrooms");
+                  const lectEls = ls.querySelectorAll(":scope > .lecturers");
+                  const room = [...roomEls].map(e => (e.getAttribute("title")||e.textContent).trim()).join(", ");
+                  const teacher = [...lectEls].map(e => (e.getAttribute("title")||e.textContent).replace(/ /g," ").replace(/\s+/g," ").trim()).join("; ");
+                  const kd = kindOf(kindEl ? kindEl.textContent : "");
+                  out.push({ date, start, end, num: SLOTS.indexOf(start)+1, name, sub, kind: kd.k, kindT: kd.t, room, teacher });
+                });
+              });
+            });
+            return out;
+          }
+
+          /* ---------- parse ics ---------- */
+          function parseIcs(text){
+            const lines = text.replace(/\r/g,"").split("\n");
+            const un = [];
+            lines.forEach(l => { if (/^[ \t]/.test(l) && un.length) un[un.length-1] += l.slice(1); else un.push(l); });
+            const ev = []; let cur = null;
+            const unesc = s => s.replace(/\\n/gi," ").replace(/\\([,;\\])/g,"$1").trim();
+            un.forEach(l => {
+              if (l === "BEGIN:VEVENT") { cur = {}; return; }
+              if (l === "END:VEVENT") { if (cur && cur.s) ev.push(cur); cur = null; return; }
+              if (!cur) return;
+              const i = l.indexOf(":"); if (i < 0) return;
+              const key = l.slice(0,i).split(";")[0], val = l.slice(i+1);
+              if (key === "DTSTART" || key === "DTEND") {
+                const m = val.match(/(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})/);
+                if (m) cur[key==="DTSTART"?"s":"e"] = { date: m[1]+"-"+m[2]+"-"+m[3], time: (+m[4])+":"+m[5] };
+              } else if (key === "SUMMARY") cur.name = unesc(val);
+              else if (key === "LOCATION") cur.room = unesc(val);
+              else if (key === "DESCRIPTION") {
+                const parts = unesc(val).split(",").map(x=>x.trim()).filter(Boolean);
+                cur.teacher = parts.length >= 2 ? parts.slice(-2).join(", ") : parts.join(", ");
+              }
+            });
+            return ev.map(e => ({ date: e.s.date, start: e.s.time, end: e.e ? e.e.time : "", name: (e.name||"").replace(/^\([^)]*\)\s*/,""), room: e.room||"", teacher: e.teacher||"" }));
+          }
+
+          /* ---------- native bridge ---------- */
+          const pending = {}; let seq = 0;
+          window.__nativeDone = (id, ok, body) => { const p = pending[id]; if (!p) return; delete pending[id]; ok ? p.res(body) : p.rej(new Error(body)); };
+          function httpGet(url){
+            return new Promise((res, rej) => {
+              if (window.Native && Native.fetch) { const id = ++seq; pending[id] = {res, rej}; Native.fetch(String(id), url); }
+              else fetch(url).then(r => r.ok ? r.text() : Promise.reject(new Error("HTTP "+r.status))).then(res, rej);
+            });
+          }
+
+          /* ---------- state ---------- */
+          const S = {
+            monday: mondayOf(new Date()),
+            sel: iso(new Date()),
+            weeks: {},           // iso(monday) -> {lessons, ts}
+            ics: store.get("ics", null),   // {events, ts}
+            sub: store.get("sub", "all"),
+            loading: 0, offline: false
+          };
+
+          function setStatus(){
+            const el = document.getElementById("status");
+            const w = S.weeks[iso(S.monday)];
+            if (S.loading) { el.textContent = "Обновляю…"; el.className = "status"; return; }
+            if (!w) { el.textContent = ""; return; }
+            const t = new Date(w.ts);
+            const when = iso(t) === iso(new Date()) ? "сегодня в "+t.getHours()+":"+pad(t.getMinutes()) : t.getDate()+" "+MON[t.getMonth()]+" в "+t.getHours()+":"+pad(t.getMinutes());
+            el.textContent = (S.offline ? "Нет связи · показана сохранённая версия от " : "Обновлено ") + when;
+            el.className = "status" + (S.offline ? " off" : "");
+          }
+          function spin(on){ document.getElementById("btnRef").classList.toggle("spin", on); }
+
+          async function loadWeek(monday, force){
+            const key = iso(monday);
+            if (!S.weeks[key]) { const c = store.get("w:"+key, null); if (c) S.weeks[key] = c; }
+            if (S.weeks[key] && !force && Date.now() - S.weeks[key].ts < 10*60*1000) return;
+            S.loading++; spin(true); setStatus();
+            try {
+              const html = await httpGet(BASE + "?week=" + key);
+              const lessons = parseWeek(html, monday);
+              S.weeks[key] = { lessons, ts: Date.now() };
+              store.set("w:"+key, S.weeks[key]);
+              S.offline = false;
+            } catch (e) { S.offline = true; }
+            S.loading--; spin(S.loading>0); setStatus();
+          }
+
+          async function loadIcs(force){
+            if (S.ics && !force && Date.now() - S.ics.ts < 6*3600*1000) return;
+            try {
+              const txt = await httpGet(BASE + ".ics");
+              S.ics = { events: parseIcs(txt), ts: Date.now() };
+              store.set("ics", S.ics);
+            } catch (e) {}
+          }
+
+          /* ---------- filtering ---------- */
+          const bySub = l => S.sub === "all" || !l.sub || l.sub.toUpperCase() === S.sub;
+          function dayLessons(dateIso){
+            const w = S.weeks[iso(mondayOf(fromIso(dateIso)))];
+            if (!w) return null;
+            return w.lessons.filter(l => l.date === dateIso && bySub(l)).sort((a,b) => toMin(a.start)-toMin(b.start));
+          }
+
+          /* ---------- render: now card ---------- */
+          function renderNow(){
+            const box = document.getElementById("now");
+            const today = iso(new Date());
+            const ls = dayLessons(today);
+            if (!ls) { box.innerHTML = ""; return; }
+            const t = nowMin();
+            const where = l => l.room ? " · ауд. "+esc(l.room.replace(/\s*\(№\d+\)/,"")) : "";
+            const cur = ls.find(l => toMin(l.start) <= t && t < toMin(l.end));
+            const next = ls.find(l => toMin(l.start) > t);
+            let html = "";
+            if (cur) {
+              const s = toMin(cur.start), e = toMin(cur.end), p = Math.round((t-s)/(e-s)*100);
+              html = `<div class="now"><div class="lbl">Сейчас идёт · ${cur.num ? cur.num+" пара" : cur.kindT}</div>
+                <div class="big">${esc(cur.name)}</div><div class="sub">${esc(cur.kindT)}${where(cur)}</div>
+                <div class="bar"><i style="width:${p}%"></i></div>
+                <div class="row"><span>${cur.start} – ${cur.end}</span><span>до конца ${dur(e-t)}</span></div>
+                ${next ? `<div class="next">Дальше в ${next.start}: ${esc(next.name)}${where(next)}</div>` : `<div class="next">Это последняя пара сегодня 🎉</div>`}</div>`;
+            } else if (next) {
+              const first = ls.length && toMin(ls[0].start) > t;
+              html = `<div class="now rest"><div class="lbl">${first ? "Первая пара" : "Перерыв"} · через ${dur(toMin(next.start)-t)}</div>
+                <div class="big">${esc(next.name)}</div><div class="sub">${next.start} – ${next.end} · ${esc(next.kindT)}${where(next)}</div>
+                ${first ? `<div class="next">Сегодня ${pairs(ls.length)}, закончите в ${ls[ls.length-1].end}</div>` : ""}</div>`;
+            } else {
+              const tm = addDays(new Date(), 1); const tl = dayLessons(iso(tm));
+              let nx = "";
+              if (tl && tl.length) nx = `Завтра ${pairs(tl.length)}, первая в ${tl[0].start} — ${esc(tl[0].name)}`;
+              else if (tl) nx = "Завтра пар нет — отдыхайте";
+              html = `<div class="now done"><div class="lbl">${ls.length ? "Пары закончились" : "Сегодня пар нет"}</div>
+                <div class="big">${ls.length ? "На сегодня всё 🎉" : "Свободный день ☕"}</div>
+                ${nx ? `<div class="sub">${nx}</div>` : ""}</div>`;
+            }
+            box.innerHTML = html;
+          }
+
+          /* ---------- render: week + day ---------- */
+          function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+          const ICON_PIN = '<svg viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>';
+          const ICON_USER = '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>';
+
+          function shortTeacher(t){ return (t||"").split(";").map(x => { const p = x.split(","); return (p.length>1 ? p.slice(1).join(",") : x).trim(); }).join(", "); }
+
+          function renderWeek(){
+            const m = S.monday, sun = addDays(m, 6);
+            const curMon = iso(mondayOf(new Date())) === iso(m);
+            const diff = Math.round((m - mondayOf(new Date())) / (7*864e5));
+            const label = curMon ? "Эта неделя" : diff === 1 ? "Следующая неделя" : diff === -1 ? "Прошлая неделя" : (diff > 0 ? "Через "+diff+" нед." : Math.abs(diff)+" нед. назад");
+            document.getElementById("wRange").innerHTML =
+              `${m.getDate()} ${m.getMonth()!==sun.getMonth() ? MON_S[m.getMonth()]+" " : ""}– ${sun.getDate()} ${MON_S[sun.getMonth()]}<small>${label}</small>`;
+            const w = S.weeks[iso(m)];
+            const sunHas = w && w.lessons.some(l => l.date === iso(sun) && bySub(l));
+            const n = sunHas ? 7 : 6;
+            const today = iso(new Date());
+            let h = "";
+            for (let i = 0; i < n; i++){
+              const d = addDays(m, i), di = iso(d);
+              const cnt = w ? w.lessons.filter(l => l.date === di && bySub(l)).length : 0;
+              h += `<button class="day${di===S.sel?" sel":""}${di===today?" today":""}" data-d="${di}">
+                <span>${DOW[i]}</span><b>${d.getDate()}</b><div class="dots">${"<i></i>".repeat(Math.min(cnt,6))}</div></button>`;
+            }
+            const box = document.getElementById("days");
+            box.style.setProperty("--n", n); box.innerHTML = h;
+          }
+
+          function renderDay(){
+            const box = document.getElementById("dayBox");
+            const ls = dayLessons(S.sel);
+            const d = fromIso(S.sel);
+            if (ls === null) {
+              box.innerHTML = S.loading ? `<div class="empty"><div class="em">⏳</div><b>Загружаю расписание</b></div>`
+                : `<div class="empty"><div class="em">📡</div><b>Нет данных</b>Проверьте интернет и нажмите «Обновить»</div>`;
+              return;
+            }
+            if (!ls.length) {
+              const wk = d.getDay()===0 || d.getDay()===6;
+              box.innerHTML = `<div class="empty"><div class="em">${wk ? "🛋️" : "🎈"}</div><b>${wk ? "Выходной" : "Пар нет"}</b>${DOW_FULL[(d.getDay()+6)%7]}, ${d.getDate()} ${MON[d.getMonth()]}</div>`;
+              return;
+            }
+            const isToday = S.sel === iso(new Date()), isPast = fromIso(S.sel) < fromIso(iso(new Date()));
+            const t = nowMin();
+            const total = ls.reduce((a,l) => a + toMin(l.end)-toMin(l.start), 0);
+            const kinds = {}; ls.forEach(l => kinds[l.kindT] = (kinds[l.kindT]||0)+1);
+            let h = `<div class="summary"><span class="pill"><b>${pairs(ls.length)}</b></span>
+              <span class="pill">${ls[0].start} – <b>${ls[ls.length-1].end}</b></span>
+              <span class="pill">в вузе ${dur(toMin(ls[ls.length-1].end)-toMin(ls[0].start))}</span></div>`;
+            ls.forEach((l, i) => {
+              if (i > 0) {
+                const g = toMin(l.start) - toMin(ls[i-1].end);
+                if (g >= 60) h += `<div class="gap">${toMin(ls[i-1].end) <= 13*60 && toMin(l.start) >= 14*60 && g <= 75 ? "Обед" : "Окно"} · ${dur(g)}</div>`;
+              }
+              const s = toMin(l.start), e = toMin(l.end);
+              const st = isPast || (isToday && t >= e) ? " past" : (isToday && t >= s && t < e ? " cur" : "");
+              h += `<div class="lesson k-${l.kind}${st}" data-i="${i}">
+                <div class="tm"><b>${l.start}</b><span>${l.end}</span>${l.num ? `<div class="n">${l.num} пара</div>` : ""}</div>
+                <div class="bd"><div class="ttl">${esc(l.name)}</div>
+                  <div class="tags"><span class="tag">${esc(l.kindT)}</span>${l.sub ? `<span class="tag">Подгр. ${esc(l.sub)}</span>` : ""}
+                    ${l.room ? `<span class="meta">${ICON_PIN}${esc(l.room)}</span>` : ""}</div>
+                  ${l.teacher ? `<div class="meta who">${ICON_USER}${esc(shortTeacher(l.teacher))}</div>` : ""}
+                </div></div>`;
+            });
+            box.innerHTML = h;
+            box.querySelectorAll(".lesson").forEach(el => el.onclick = () => openLesson(ls[+el.dataset.i]));
+          }
+
+          /* ---------- subjects (semester) ---------- */
+          function semesterRange(){
+            const n = new Date(), y = n.getFullYear();
+            return n.getMonth() >= 6 ? [y+"-07-01", (y+1)+"-01-31"] : [y+"-01-01", y+"-07-31"];
+          }
+          function semEvents(){
+            if (!S.ics) return [];
+            const [a, b] = semesterRange();
+            return S.ics.events.filter(e => e.date >= a && e.date <= b);
+          }
+          function isDone(e){
+            const today = iso(new Date());
+            return e.date < today || (e.date === today && toMin(e.end || e.start) <= nowMin());
+          }
+          function fmtDate(di){ const d = fromIso(di); return DOW[(d.getDay()+6)%7]+", "+d.getDate()+" "+MON[d.getMonth()]; }
+
+          function renderSubjects(){
+            const box = document.getElementById("subjBox");
+            const ev = semEvents();
+            if (!ev.length) { box.innerHTML = `<div class="empty"><div class="em">📚</div><b>${S.ics ? "Нет данных за семестр" : "Загружаю предметы"}</b></div>`; return; }
+            const done = ev.filter(isDone).length;
+            const dates = ev.map(e => e.date).sort();
+            const last = dates[dates.length-1];
+            const daysLeft = Math.max(0, Math.round((fromIso(last) - fromIso(iso(new Date())))/864e5));
+            const map = {};
+            ev.forEach(e => { (map[e.name] = map[e.name] || {name:e.name, all:[], teachers:new Set()}).all.push(e); if (e.teacher) map[e.name].teachers.add(e.teacher); });
+            const list = Object.values(map).map(s => {
+              s.all.sort((a,b) => (a.date+pad(toMin(a.start))).localeCompare(b.date+pad(toMin(b.start))));
+              s.done = s.all.filter(isDone).length; s.left = s.all.length - s.done;
+              s.next = s.all.find(e => !isDone(e));
+              return s;
+            }).sort((a,b) => (a.next ? a.next.date : "9") .localeCompare(b.next ? b.next.date : "9") || b.left - a.left);
+            let h = `<div class="sem"><h3>Семестр</h3><p>Осталось ${pairs(ev.length-done)} · последние занятия ${fmtDate(last).toLowerCase()} (через ${daysLeft} дн.)</p>
+              <div class="bar"><i style="width:${Math.round(done/ev.length*100)}%"></i></div>
+              <div class="row"><span>Прошло ${done} из ${ev.length}</span><span>${Math.round(done/ev.length*100)}%</span></div></div>`;
+            list.forEach(s => {
+              const p = Math.round(s.done/s.all.length*100);
+              h += `<div class="subj"><div class="ttl">${esc(s.name)}</div>
+                <div class="meta">${ICON_USER}${esc([...s.teachers].map(x => shortTeacher(x)).join(", "))}</div>
+                <div class="bar"><i style="width:${p}%"></i></div>
+                <div class="row"><span>Прошло ${s.done} из ${s.all.length}</span><span>осталось ${pairs(s.left)}</span></div>
+                <div class="nx">${s.next ? "Следующее: <b>"+fmtDate(s.next.date)+", "+s.next.start+"</b>"+(s.next.room ? " · "+esc(s.next.room) : "") : "Занятия по предмету закончились ✅"}</div></div>`;
+            });
+            box.innerHTML = h;
+          }
+
+          /* ---------- sheets ---------- */
+          function openSheet(html){ document.getElementById("sheetBody").innerHTML = html; document.getElementById("veil").classList.add("on"); document.getElementById("sheet").classList.add("on"); }
+          function closeSheet(){ const s = document.getElementById("sheet"); if (!s.classList.contains("on")) return false; s.classList.remove("on"); document.getElementById("veil").classList.remove("on"); return true; }
+
+          function openLesson(l){
+            const ev = semEvents().filter(e => e.name === l.name);
+            const done = ev.filter(isDone).length;
+            const after = ev.filter(e => (e.date > l.date) || (e.date === l.date && toMin(e.start) > toMin(l.start)))
+              .sort((a,b) => (a.date+pad(toMin(a.start))).localeCompare(b.date+pad(toMin(b.start))))[0];
+            let h = `<h2>${esc(l.name)}</h2>
+              <div class="li"><span>Когда</span><b>${fmtDate(l.date)}, ${l.start} – ${l.end}${l.num ? " ("+l.num+" пара)" : ""}</b></div>
+              <div class="li"><span>Тип</span><b>${esc(l.kindT)}${l.sub ? ", подгруппа "+esc(l.sub) : ""}</b></div>
+              ${l.room ? `<div class="li"><span>Аудитория</span><b>${esc(l.room)}</b></div>` : ""}
+              ${l.teacher ? `<div class="li"><span>Преподаватель</span><b>${esc(l.teacher)}</b></div>` : ""}`;
+            if (ev.length) {
+              h += `<div class="li"><span>За семестр</span><b>${ev.length} занятий, прошло ${done}, осталось ${ev.length-done}</b></div>`;
+              h += `<div class="li"><span>Следующее</span><b>${after ? fmtDate(after.date)+", "+after.start+(after.room ? " · "+esc(after.room) : "") : "больше нет"}</b></div>`;
+            }
+            openSheet(h);
+          }
+
+          function openSettings(){
+            const b = v => `<button data-s="${v}" class="${S.sub===v?"on":""}">${v==="all"?"Все":"Подгр. "+v}</button>`;
+            openSheet(`<h2>Настройки</h2>
+              <div style="font-weight:600;margin-top:4px">Моя подгруппа</div>
+              <div class="opt">${b("all")}${b("А")}${b("Б")}</div>
+              <p class="hint">Занятия другой подгруппы будут скрыты. Общие пары показываются всегда.</p>`);
+            document.querySelectorAll("#sheetBody [data-s]").forEach(x => x.onclick = () => {
+              S.sub = x.dataset.s; store.set("sub", S.sub); openSettings(); renderAll();
+            });
+          }
+
+          /* ---------- glue ---------- */
+          function renderAll(){ setStatus(); renderNow(); renderWeek(); renderDay(); if (document.getElementById("vSubj").classList.contains("on")) renderSubjects(); }
+
+          async function goWeek(delta){
+            S.monday = addDays(S.monday, 7*delta);
+            const todayMon = iso(mondayOf(new Date())) === iso(S.monday);
+            S.sel = todayMon ? iso(new Date()) : iso(S.monday);
+            renderAll();
+            await loadWeek(S.monday); renderAll();
+          }
+          function selectDay(di){ S.sel = di; renderWeek(); renderDay(); }
+          function shiftDay(delta){
+            const d = addDays(fromIso(S.sel), delta);
+            if (iso(mondayOf(d)) !== iso(S.monday)) { S.monday = mondayOf(d); S.sel = iso(d); renderAll(); loadWeek(S.monday).then(renderAll); }
+            else selectDay(iso(d));
+          }
+
+          document.getElementById("days").addEventListener("click", e => { const b = e.target.closest(".day"); if (b) selectDay(b.dataset.d); });
+          document.getElementById("prevW").onclick = () => goWeek(-1);
+          document.getElementById("nextW").onclick = () => goWeek(1);
+          document.getElementById("btnRef").onclick = async () => {
+            const today = new Date();
+            await Promise.all([loadWeek(S.monday, true), loadWeek(mondayOf(today), true), loadIcs(true)]);
+            renderAll();
+          };
+          document.getElementById("btnSet").onclick = openSettings;
+          document.getElementById("veil").onclick = closeSheet;
+          document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
+            document.querySelectorAll("nav button").forEach(x => x.classList.toggle("on", x === b));
+            document.querySelectorAll(".view").forEach(v => v.classList.toggle("on", v.id === b.dataset.v));
+            if (b.dataset.v === "vSubj") renderSubjects();
+            window.scrollTo(0,0);
+          });
+
+          /* swipe between days */
+          let tx = null, ty = null;
+          document.getElementById("dayBox").addEventListener("touchstart", e => { tx = e.touches[0].clientX; ty = e.touches[0].clientY; }, {passive:true});
+          document.getElementById("dayBox").addEventListener("touchend", e => {
+            if (tx === null) return;
+            const dx = e.changedTouches[0].clientX - tx, dy = e.changedTouches[0].clientY - ty; tx = null;
+            if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy)*1.5) shiftDay(dx < 0 ? 1 : -1);
+          });
+
+          window.handleBack = () => closeSheet();
+
+          (async function init(){
+            renderAll();
+            // если сегодня воскресенье — сразу показываем следующую неделю
+            const t = new Date();
+            if (t.getDay() === 0) { S.monday = addDays(mondayOf(t), 7); S.sel = iso(S.monday); }
+            await loadWeek(mondayOf(t)); renderAll();
+            if (iso(S.monday) !== iso(mondayOf(t))) { await loadWeek(S.monday); renderAll(); }
+            // завтра может быть на следующей неделе
+            const tm = addDays(t, 1); if (iso(mondayOf(tm)) !== iso(mondayOf(t))) { await loadWeek(mondayOf(tm)); renderNow(); }
+            await loadIcs(); renderAll();
+            setInterval(() => { renderNow(); if (S.sel === iso(new Date())) renderDay(); }, 30000);
+          })();
+          </script>
+          </body>
+          </html>
+          RASP_EOF
       - name: Build
         run: gradle assembleDebug
       - uses: actions/upload-artifact@v4
