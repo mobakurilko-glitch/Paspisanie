@@ -283,7 +283,7 @@ jobs:
           .lesson.cur{outline:2px solid var(--c)}
           .lesson .tm{min-width:50px;text-align:right}
           .lesson .tm b{display:block;font-size:15px}
-          .lesson .tm span{font-size:12px;color:var(--muted)}
+          .lesson .tm span{display:block;font-size:12px;color:var(--muted)}
           .lesson .tm .n{display:inline-block;margin-top:6px;font-size:11px;font-weight:700;color:var(--c);background:var(--cs);border-radius:6px;padding:1px 6px}
           .lesson .bd{flex:1;min-width:0}
           .lesson .ttl{font-weight:650;font-size:15px;margin-bottom:5px}
@@ -392,6 +392,7 @@ jobs:
 
           /* ---------- dates ---------- */
           const pad = n => String(n).padStart(2,"0");
+          const p4 = n => String(n).padStart(4,"0");
           const iso = d => d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
           const fromIso = s => { const [y,m,d] = s.split("-").map(Number); return new Date(y, m-1, d); };
           const addDays = (d,n) => { const x = new Date(d); x.setDate(x.getDate()+n); return x; };
@@ -683,11 +684,11 @@ jobs:
             const map = {};
             ev.forEach(e => { (map[e.name] = map[e.name] || {name:e.name, all:[], teachers:new Set()}).all.push(e); if (e.teacher) map[e.name].teachers.add(e.teacher); });
             const list = Object.values(map).map(s => {
-              s.all.sort((a,b) => (a.date+pad(toMin(a.start))).localeCompare(b.date+pad(toMin(b.start))));
+              s.all.sort((a,b) => (a.date+p4(toMin(a.start))).localeCompare(b.date+p4(toMin(b.start))));
               s.done = s.all.filter(isDone).length; s.left = s.all.length - s.done;
               s.next = s.all.find(e => !isDone(e));
               return s;
-            }).sort((a,b) => (a.next ? a.next.date : "9") .localeCompare(b.next ? b.next.date : "9") || b.left - a.left);
+            }).sort((a,b) => { const nk = s => s.next ? s.next.date+p4(toMin(s.next.start)) : "9"; return nk(a).localeCompare(nk(b)) || b.left - a.left; });
             let h = `<div class="sem"><h3>Семестр</h3><p>Осталось ${pairs(ev.length-done)} · последние занятия ${fmtDate(last).toLowerCase()} (через ${daysLeft} дн.)</p>
               <div class="bar"><i style="width:${Math.round(done/ev.length*100)}%"></i></div>
               <div class="row"><span>Прошло ${done} из ${ev.length}</span><span>${Math.round(done/ev.length*100)}%</span></div></div>`;
@@ -710,14 +711,14 @@ jobs:
             const ev = semEvents().filter(e => e.name === l.name);
             const done = ev.filter(isDone).length;
             const after = ev.filter(e => (e.date > l.date) || (e.date === l.date && toMin(e.start) > toMin(l.start)))
-              .sort((a,b) => (a.date+pad(toMin(a.start))).localeCompare(b.date+pad(toMin(b.start))))[0];
+              .sort((a,b) => (a.date+p4(toMin(a.start))).localeCompare(b.date+p4(toMin(b.start))))[0];
             let h = `<h2>${esc(l.name)}</h2>
               <div class="li"><span>Когда</span><b>${fmtDate(l.date)}, ${l.start} – ${l.end}${l.num ? " ("+l.num+" пара)" : ""}</b></div>
               <div class="li"><span>Тип</span><b>${esc(l.kindT)}${l.sub ? ", подгруппа "+esc(l.sub) : ""}</b></div>
               ${l.room ? `<div class="li"><span>Аудитория</span><b>${esc(l.room)}</b></div>` : ""}
               ${l.teacher ? `<div class="li"><span>Преподаватель</span><b>${esc(l.teacher)}</b></div>` : ""}`;
             if (ev.length) {
-              h += `<div class="li"><span>За семестр</span><b>${ev.length} занятий, прошло ${done}, осталось ${ev.length-done}</b></div>`;
+              h += `<div class="li"><span>За семестр</span><b>${ev.length} ${plural(ev.length,"занятие","занятия","занятий")}, прошло ${done}, осталось ${ev.length-done}</b></div>`;
               h += `<div class="li"><span>Следующее</span><b>${after ? fmtDate(after.date)+", "+after.start+(after.room ? " · "+esc(after.room) : "") : "больше нет"}</b></div>`;
             }
             openSheet(h);
