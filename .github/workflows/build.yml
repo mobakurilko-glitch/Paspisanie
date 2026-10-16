@@ -51,8 +51,8 @@ jobs:
                   applicationId = "ru.dalgau.raspisanie"
                   minSdk = 26
                   targetSdk = 34
-                  versionCode = 3
-                  versionName = "3.0"
+                  versionCode = 4
+                  versionName = "4.0"
               }
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
@@ -92,6 +92,7 @@ jobs:
           import android.graphics.Color
           import android.os.Bundle
           import android.webkit.JavascriptInterface
+          import android.webkit.WebChromeClient
           import android.webkit.WebView
           import android.webkit.WebViewClient
           import androidx.activity.OnBackPressedCallback
@@ -118,14 +119,10 @@ jobs:
 
                   val dark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
                           Configuration.UI_MODE_NIGHT_YES
-                  val bg = if (dark) Color.parseColor("#0F1115") else Color.parseColor("#F4F5F8")
-                  val bar = if (dark) Color.parseColor("#1A1D24") else Color.WHITE
-                  window.statusBarColor = bg
-                  window.navigationBarColor = bar
-                  WindowCompat.getInsetsController(window, window.decorView).apply {
-                      isAppearanceLightStatusBars = !dark
-                      isAppearanceLightNavigationBars = !dark
-                  }
+                  val bg = if (dark) Color.parseColor("#121614") else Color.parseColor("#EEF0EF")
+                  window.statusBarColor = Color.parseColor("#1E6E40")
+                  WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars = false
+                  applyNavBar(dark)
 
                   webView = WebView(this)
                   webView.setBackgroundColor(bg)
@@ -136,6 +133,7 @@ jobs:
                   webView.webViewClient = object : WebViewClient() {
                       override fun onPageFinished(view: WebView, url: String?) { pageReady = true }
                   }
+                  webView.webChromeClient = WebChromeClient()
                   webView.addJavascriptInterface(Bridge(), "Native")
 
                   onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -154,7 +152,20 @@ jobs:
                   if (pageReady) webView.evaluateJavascript("window.onAppResume && window.onAppResume()", null)
               }
 
+              private fun applyNavBar(dark: Boolean) {
+                  window.navigationBarColor = if (dark) Color.parseColor("#1B211E") else Color.WHITE
+                  WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightNavigationBars = !dark
+              }
+
               inner class Bridge {
+                  @JavascriptInterface
+                  fun setTheme(dark: Boolean) {
+                      runOnUiThread {
+                          applyNavBar(dark)
+                          webView.setBackgroundColor(if (dark) Color.parseColor("#121614") else Color.parseColor("#EEF0EF"))
+                      }
+                  }
+
                   @JavascriptInterface
                   fun fetch(id: String, url: String, xhr: Boolean) {
                       thread {
@@ -206,7 +217,7 @@ jobs:
           cat > app/src/main/res/values/colors.xml <<'RASP_EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
-              <color name="ic_bg">#3B6CF6</color>
+              <color name="ic_bg">#1E6E40</color>
           </resources>
           RASP_EOF
           cat > app/src/main/res/drawable/ic_fg.xml <<'RASP_EOF'
@@ -215,13 +226,13 @@ jobs:
               android:viewportWidth="108" android:viewportHeight="108">
               <path android:fillColor="#FFFFFF"
                   android:pathData="M38,34h32a6,6 0,0 1,6 6v32a6,6 0,0 1,-6 6h-32a6,6 0,0 1,-6 -6v-32a6,6 0,0 1,6 -6z"/>
-              <path android:fillColor="#3B6CF6"
+              <path android:fillColor="#1E6E40"
                   android:pathData="M32,46h44v4h-44z"/>
               <path android:fillColor="#FFFFFF"
                   android:pathData="M42,28h4v12h-4zM62,28h4v12h-4z"/>
-              <path android:fillColor="#3B6CF6"
+              <path android:fillColor="#1E6E40"
                   android:pathData="M40,56h8v6h-8zM50,56h8v6h-8zM60,56h8v6h-8zM40,66h8v6h-8zM50,66h8v6h-8z"/>
-              <path android:fillColor="#14A06A"
+              <path android:fillColor="#F2C230"
                   android:pathData="M60,66h8v6h-8z"/>
           </vector>
           RASP_EOF
@@ -234,178 +245,222 @@ jobs:
           RASP_EOF
           cat > app/src/main/assets/index.html <<'RASP_EOF'
           <!doctype html>
-          <html lang="ru">
+          <html lang="ru" data-theme="auto">
           <head>
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-          <title>Расписание</title>
+          <title>Расписание ДальГАУ</title>
           <style>
           :root{
-            --bg:#F4F5F8; --card:#FFFFFF; --text:#14161C; --muted:#6B7180; --line:#E4E6EC;
-            --accent:#3B6CF6; --accent-soft:#DCE6FF;
-            --lec:#3B6CF6; --lec-soft:#DCE6FF;
-            --pr:#14A06A; --pr-soft:#D3F1E3;
-            --lab:#E8782A; --lab-soft:#FCE3CF;
-            --oth:#8A5CF0; --oth-soft:#E8DDFF;
-            --warn:#D9822B;
-            --shadow:0 1px 2px rgba(20,22,28,.06),0 4px 14px rgba(20,22,28,.05);
+            --green:#1E6E40; --green-d:#155231; --yellow:#F2C230; --mint:#D3EFDE; --mint-t:#1E6E40;
+            --bg:#EEF0EF; --card:#FFFFFF; --text:#1C1F1D; --muted:#6B7570; --line:#E2E6E4;
+            --accent:#1E6E40; --accent-soft:#D3EFDE;
+            --lec:#1E6E40; --lec-soft:#D9EEE1;
+            --pr:#1B6E9E; --pr-soft:#DAEAF4;
+            --lab:#B7791F; --lab-soft:#F7E9CF;
+            --oth:#6D5BA8; --oth-soft:#ECE8F6;
+            --warn:#B4610E;
+            --shadow:0 1px 3px rgba(0,0,0,.08);
+            --cond:"Roboto Condensed","sans-serif-condensed","Arial Narrow",sans-serif;
+            --serif:"Noto Serif","Georgia",serif;
+          }
+          :root[data-theme="dark"]{
+            --bg:#121614; --card:#1B211E; --text:#E8EEEA; --muted:#93A39A; --line:#2A332E;
+            --accent:#4CC47F; --accent-soft:#1F3A2B; --mint:#1F3A2B; --mint-t:#7FD9A5;
+            --lec:#5BC98A; --lec-soft:#1E3A2A;
+            --pr:#5BB0E0; --pr-soft:#1B3140;
+            --lab:#E3B05A; --lab-soft:#3A2F1C;
+            --oth:#A895E6; --oth-soft:#2C2740;
+            --warn:#F0A55A; --shadow:none;
           }
           @media (prefers-color-scheme: dark){
-            :root{
-              --bg:#0F1115; --card:#1A1D24; --text:#ECEEF3; --muted:#9097A6; --line:#2A2E38;
-              --accent:#7C9BFF; --accent-soft:#25305A;
-              --lec:#7C9BFF; --lec-soft:#25305A;
-              --pr:#3FD39B; --pr-soft:#173A30;
-              --lab:#FFA25E; --lab-soft:#45301F;
-              --oth:#B59BFF; --oth-soft:#33294F;
-              --warn:#FFB061;
-              --shadow:none;
+            :root[data-theme="auto"]{
+              --bg:#121614; --card:#1B211E; --text:#E8EEEA; --muted:#93A39A; --line:#2A332E;
+              --accent:#4CC47F; --accent-soft:#1F3A2B; --mint:#1F3A2B; --mint-t:#7FD9A5;
+              --lec:#5BC98A; --lec-soft:#1E3A2A;
+              --pr:#5BB0E0; --pr-soft:#1B3140;
+              --lab:#E3B05A; --lab-soft:#3A2F1C;
+              --oth:#A895E6; --oth-soft:#2C2740;
+              --warn:#F0A55A; --shadow:none;
             }
           }
           *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
           html,body{margin:0;background:var(--bg);color:var(--text);
-            font-family:-apple-system,"Roboto","Segoe UI",sans-serif;font-size:15px;line-height:1.35}
-          body{padding-bottom:76px;overscroll-behavior-y:contain}
+            font-family:"Roboto",-apple-system,"Segoe UI",sans-serif;font-size:15px;line-height:1.38}
+          body{padding-bottom:72px;overscroll-behavior-y:contain}
+          body.big{zoom:1.12}
           button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
 
-          header{position:sticky;top:0;z-index:5;background:var(--bg);padding:14px 16px 8px}
-          .top{display:flex;align-items:center;gap:10px}
-          .top h1{font-size:22px;margin:0;font-weight:700;letter-spacing:-.3px;flex:1}
-          .top .grp{font-size:12px;color:var(--muted);font-weight:500;display:block;letter-spacing:0}
-          .iconbtn{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:var(--card);box-shadow:var(--shadow)}
-          .iconbtn svg{width:20px;height:20px;stroke:var(--text);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+          /* ---- шапка в стиле сайта ---- */
+          .appbar{position:sticky;top:0;z-index:5;background:var(--green);color:#fff;padding:10px 14px 10px 16px;display:flex;align-items:center;gap:10px;box-shadow:0 2px 6px rgba(0,0,0,.15)}
+          .mark{width:34px;height:34px;flex:none}
+          .brand{flex:1;min-width:0;line-height:1.05}
+          .brand b{display:block;font-family:var(--cond);font-weight:700;font-size:19px;letter-spacing:.3px;text-transform:uppercase}
+          .brand span{font-family:var(--cond);font-size:12px;text-transform:uppercase;letter-spacing:.6px;opacity:.85}
+          .chip{font-family:var(--cond);font-weight:700;font-size:13px;padding:5px 10px;border-radius:999px;background:rgba(255,255,255,.16);white-space:nowrap}
+          .iconbtn{width:36px;height:36px;border-radius:50%;display:grid;place-items:center}
+          .iconbtn:active{background:rgba(255,255,255,.15)}
+          .iconbtn svg{width:21px;height:21px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
           .spin svg{animation:spin 1s linear infinite}
           @keyframes spin{to{transform:rotate(360deg)}}
+          .crumbs{font-size:12px;color:var(--muted);padding:8px 16px 0;min-height:24px}
+          .crumbs.off{color:var(--warn)}
 
-          .status{font-size:12px;color:var(--muted);margin:6px 0 0;min-height:16px}
-          .status.off{color:var(--warn)}
-
-          main{padding:0 16px}
+          main{padding:4px 14px 0}
           .view{display:none}.view.on{display:block}
+          .h-serif{font-family:var(--serif);font-weight:400;font-size:21px;margin:6px 2px 10px}
 
-          /* now card */
-          .now{border-radius:20px;padding:16px;margin:8px 0 14px;color:#fff;
-            background:linear-gradient(135deg,#3B6CF6,#6A4CF0);box-shadow:0 6px 20px rgba(59,108,246,.25)}
-          .now.rest{background:linear-gradient(135deg,#14A06A,#2BB8A0);box-shadow:0 6px 20px rgba(20,160,106,.22)}
-          .now.done{background:linear-gradient(135deg,#475066,#2E3445);box-shadow:none}
-          .now .lbl{font-size:12px;opacity:.85;text-transform:uppercase;letter-spacing:.6px;font-weight:600}
-          .now .big{font-size:20px;font-weight:700;margin:4px 0 2px;line-height:1.2}
+          /* ---- карточка «Сейчас» ---- */
+          .now{border-radius:6px;padding:15px 16px;margin:6px 0 14px;color:#fff;background:linear-gradient(135deg,#1E6E40,#2E8B57);box-shadow:0 4px 14px rgba(30,110,64,.25);position:relative;overflow:hidden}
+          .now::after{content:"";position:absolute;right:-18px;top:-18px;width:70px;height:70px;border-radius:50%;background:var(--yellow);opacity:.18}
+          .now.rest{background:linear-gradient(135deg,#1B6E7E,#1E6E40)}
+          .now.done{background:linear-gradient(135deg,#3E4A44,#2A322E);box-shadow:none}
+          .now .lbl{font-family:var(--cond);font-size:13px;text-transform:uppercase;letter-spacing:.7px;font-weight:700;opacity:.9}
+          .now .lbl i{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--yellow);margin-right:6px;vertical-align:1px}
+          .now .big{font-size:19px;font-weight:700;margin:4px 0 2px;line-height:1.22}
           .now .sub{font-size:14px;opacity:.92}
           .now .bar{height:6px;border-radius:3px;background:rgba(255,255,255,.25);margin:12px 0 6px;overflow:hidden}
-          .now .bar i{display:block;height:100%;background:#fff;border-radius:3px}
-          .now .row{display:flex;justify-content:space-between;font-size:12px;opacity:.9}
-          .now .next{margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,.22);font-size:13px;opacity:.95}
+          .now .bar i{display:block;height:100%;background:var(--yellow);border-radius:3px}
+          .now .row{display:flex;justify-content:space-between;font-size:12px;opacity:.92}
+          .now .next{margin-top:11px;padding-top:9px;border-top:1px solid rgba(255,255,255,.22);font-size:13px;opacity:.95}
 
-          /* week */
+          /* ---- неделя ---- */
           .week{display:flex;align-items:center;justify-content:space-between;margin:2px 0 10px}
-          .week .rng{font-weight:600;text-align:center}
-          .week .rng small{display:block;font-size:12px;color:var(--muted);font-weight:500}
-          .week button.arrow{width:34px;height:34px;border-radius:10px;background:var(--card);box-shadow:var(--shadow);font-size:20px;line-height:34px}
-          .days{display:grid;grid-template-columns:repeat(var(--n,6),1fr);gap:6px;margin-bottom:14px}
-          .day{background:var(--card);border-radius:14px;padding:8px 0 7px;text-align:center;box-shadow:var(--shadow);position:relative;overflow:hidden}
-          .day b{display:block;font-size:17px;margin-top:1px}
-          .day span{font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:600}
-          .day .dots{display:flex;justify-content:center;gap:3px;height:5px;margin-top:4px}
-          .day .dots i{width:5px;height:5px;border-radius:50%;background:var(--muted);opacity:.45}
+          .week .rng{font-family:var(--cond);font-weight:700;font-size:17px;text-align:center;text-transform:uppercase;letter-spacing:.3px}
+          .week .rng small{display:block;font-family:inherit;font-size:12px;color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0}
+          .week button.arrow{width:36px;height:36px;border-radius:50%;background:var(--mint);color:var(--mint-t);font-size:22px;line-height:34px;font-weight:700}
+          .days{display:grid;grid-template-columns:repeat(var(--n,6),1fr);gap:6px;margin-bottom:12px}
+          .day{background:var(--card);border-radius:6px;padding:7px 0 6px;text-align:center;box-shadow:var(--shadow);border-bottom:3px solid transparent}
+          .day b{display:block;font-size:17px}
+          .day span{font-family:var(--cond);font-size:12px;color:var(--muted);text-transform:uppercase;font-weight:700}
+          .day .dots{display:flex;justify-content:center;gap:3px;height:5px;margin-top:3px}
+          .day .dots i{width:5px;height:5px;border-radius:50%;background:var(--muted);opacity:.4}
           .day .dots i.p{background:var(--accent);opacity:1}
-          .day.today span{color:var(--accent)}
-          .day.sel{background:var(--accent);box-shadow:0 4px 12px rgba(59,108,246,.3)}
-          .day.sel span,.day.sel b{color:#fff}.day.sel .dots i{background:#fff;opacity:.55}.day.sel .dots i.p{opacity:1}
+          .day.today{border-bottom-color:var(--yellow)}
+          .day.sel{background:var(--green);color:#fff}
+          .day.sel span{color:#fff;opacity:.85}.day.sel .dots i{background:#fff;opacity:.45}.day.sel .dots i.p{background:var(--yellow);opacity:1}
 
-          /* day progress */
-          .dprog{background:var(--card);border-radius:16px;padding:12px 14px;margin-bottom:12px;box-shadow:var(--shadow)}
+          /* ---- прогресс дня ---- */
+          .dprog{background:var(--card);border-radius:6px;padding:11px 14px;margin-bottom:10px;box-shadow:var(--shadow)}
           .dprog .row{display:flex;justify-content:space-between;gap:10px;font-size:13px;color:var(--muted);align-items:baseline}
-          .dprog .row b{color:var(--text);font-size:15px}
-          .dprog .bar{height:8px;border-radius:4px;background:var(--line);margin:10px 0 0;overflow:hidden;display:flex;gap:2px}
+          .dprog .row b{color:var(--text);font-size:15px;white-space:nowrap}
+          .dprog .bar{height:7px;border-radius:4px;margin:9px 0 0;overflow:hidden;display:flex;gap:2px}
           .dprog .bar i{display:block;height:100%;flex:1;background:var(--line);position:relative;overflow:hidden}
           .dprog .bar i::after{content:"";position:absolute;inset:0;width:var(--p,0%);background:var(--accent)}
+          .hidden-note{font-size:12px;color:var(--muted);text-align:center;margin:-2px 0 10px}
+          .hidden-note button{color:var(--accent);font-weight:600}
 
-          /* lessons */
-          .lesson{display:flex;gap:12px;background:var(--card);border-radius:16px;padding:12px 14px;margin-bottom:10px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+          /* ---- пары ---- */
+          .lesson{display:flex;gap:12px;background:var(--card);border-radius:6px;padding:12px 14px;margin-bottom:9px;box-shadow:var(--shadow);position:relative;overflow:hidden}
           .lesson .fill{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--cs);transition:width .8s ease}
           .lesson.cur .fill{box-shadow:inset -2px 0 0 var(--c)}
           .lesson::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--c);z-index:1}
           .lesson > .tm,.lesson > .bd{position:relative;z-index:1}
           .lesson.cur{box-shadow:0 0 0 2px var(--c)}
-          .lesson .tm{min-width:50px;text-align:right}
+          .lesson .tm{min-width:48px;text-align:right}
           .lesson .tm b{display:block;font-size:15px}
           .lesson .tm span{display:block;font-size:12px;color:var(--muted)}
-          .lesson .tm .n{display:inline-block;margin-top:6px;font-size:11px;font-weight:700;color:var(--c);background:var(--card);border-radius:6px;padding:1px 6px}
+          .lesson .tm .n{display:inline-block;margin-top:6px;font-family:var(--cond);font-size:12px;font-weight:700;color:var(--c);background:var(--card);border-radius:4px;padding:0 5px}
           .lesson .bd{flex:1;min-width:0}
-          .lesson .ttl{font-weight:650;font-size:15px;margin-bottom:5px}
+          .lesson .ttl{font-weight:600;font-size:15px;margin-bottom:5px}
           .tags{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-          .tag{font-size:12px;font-weight:600;padding:2px 8px;border-radius:7px;background:var(--card);color:var(--c)}
+          .tag{font-family:var(--cond);font-size:13px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--card);color:var(--c);text-transform:uppercase;letter-spacing:.3px}
           .meta{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:4px}
           .meta svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;flex:none}
           .lesson .who{margin-top:6px}
-          .lesson .prog{margin-top:7px;font-size:12px;font-weight:700;color:var(--c)}
+          .lesson .prog{margin-top:6px;font-size:12px;font-weight:700;color:var(--c)}
+          body.compact .lesson{padding:8px 12px;margin-bottom:6px}
+          body.compact .lesson .who,body.compact .lesson .tm .n{display:none}
+          body.compact .lesson .ttl{margin-bottom:3px}
           .k-lec{--c:var(--lec);--cs:var(--lec-soft)}
           .k-pr{--c:var(--pr);--cs:var(--pr-soft)}
           .k-lab{--c:var(--lab);--cs:var(--lab-soft)}
           .k-oth{--c:var(--oth);--cs:var(--oth-soft)}
-
-          .gap{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12px;margin:2px 0 12px 6px}
+          .gap{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12px;margin:2px 0 10px 6px}
           .gap::before,.gap::after{content:"";flex:1;height:1px;background:var(--line)}
-          .gap.now{color:var(--accent);font-weight:600}
+          .gap.now{color:var(--accent);font-weight:700}
           .gap.now::before,.gap.now::after{background:var(--accent);opacity:.5}
 
-          .empty{text-align:center;padding:42px 20px;color:var(--muted)}
-          .empty .em{font-size:44px;margin-bottom:8px}
+          .empty{text-align:center;padding:40px 20px;color:var(--muted);background:var(--card);border-radius:6px;box-shadow:var(--shadow)}
+          .empty .em{font-size:42px;margin-bottom:6px}
           .empty b{display:block;color:var(--text);font-size:17px;margin-bottom:4px}
-          .btn{display:inline-block;margin-top:14px;padding:10px 18px;border-radius:12px;background:var(--accent);color:#fff;font-weight:600}
+          .pill{display:inline-block;padding:10px 22px;border-radius:999px;background:var(--mint);color:var(--mint-t);font-weight:600;font-size:15px}
+          .pill.solid{background:var(--green);color:#fff}
+          .pill:disabled{opacity:.45}
+          .empty .pill{margin-top:14px}
 
-          /* subjects */
-          .intro{font-size:13px;color:var(--muted);margin:8px 2px 12px}
-          .sem{background:var(--card);border-radius:18px;padding:16px;margin:0 0 14px;box-shadow:var(--shadow)}
-          .sem h3{margin:0 0 4px;font-size:16px}
+          /* ---- предметы ---- */
+          .intro{font-size:13px;color:var(--muted);margin:0 2px 12px}
+          .sem,.subj{background:var(--card);border-radius:6px;padding:14px 16px;margin:0 0 10px;box-shadow:var(--shadow)}
+          .sem{border-top:3px solid var(--green)}
+          .sem h3{margin:0 0 4px;font-family:var(--cond);font-size:18px;text-transform:uppercase;letter-spacing:.3px}
           .sem p{margin:0;color:var(--muted);font-size:13px}
-          .sem .bar,.subj .bar{height:8px;background:var(--line);border-radius:4px;overflow:hidden;margin:12px 0 6px}
-          .sem .bar i,.subj .bar i{display:block;height:100%;background:var(--accent);border-radius:4px}
-          .sem .row,.subj .row{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
-          .subj{background:var(--card);border-radius:16px;padding:14px;margin-bottom:10px;box-shadow:var(--shadow)}
-          .subj .ttl{font-weight:650;margin-bottom:4px}
-          .subj .bar{height:6px;margin:10px 0 6px}
+          .bar2{height:7px;background:var(--line);border-radius:4px;overflow:hidden;margin:11px 0 6px}
+          .bar2 i{display:block;height:100%;background:var(--accent);border-radius:4px}
+          .row2{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
+          .subj .ttl{font-weight:600;margin-bottom:4px}
           .subj .nx{font-size:13px;margin-top:8px}
 
-          /* nav */
-          nav{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);display:flex;padding:6px 8px 8px;z-index:6}
-          nav button{flex:1;padding:6px 0;border-radius:12px;font-size:12px;color:var(--muted);font-weight:600;display:flex;flex-direction:column;align-items:center;gap:2px}
+          /* ---- нижнее меню ---- */
+          nav{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);display:flex;padding:5px 8px 7px;z-index:6}
+          nav button{flex:1;padding:5px 0;font-size:12px;color:var(--muted);font-weight:600;display:flex;flex-direction:column;align-items:center;gap:2px}
           nav button svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
           nav button.on{color:var(--accent)}
 
-          /* sheet */
-          .veil{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:10;opacity:0;pointer-events:none;transition:opacity .2s}
+          /* ---- шторка и настройки ---- */
+          .veil{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10;opacity:0;pointer-events:none;transition:opacity .2s}
           .veil.on{opacity:1;pointer-events:auto}
-          .sheet{position:fixed;left:0;right:0;bottom:0;z-index:11;background:var(--card);border-radius:22px 22px 0 0;padding:10px 18px 26px;
-            transform:translateY(105%);transition:transform .25s ease;max-height:88vh;overflow:auto}
+          .sheet{position:fixed;left:0;right:0;bottom:0;z-index:11;background:var(--card);border-radius:12px 12px 0 0;padding:10px 18px 26px;transform:translateY(105%);transition:transform .25s ease;max-height:90vh;overflow:auto}
           .sheet.on{transform:none}
-          .sheet .grab{width:40px;height:4px;border-radius:2px;background:var(--line);margin:0 auto 14px}
-          .sheet h2{font-size:20px;margin:6px 0 10px;line-height:1.25}
-          .sheet h4{margin:18px 0 6px;font-size:14px}
-          .sheet .li{display:flex;gap:12px;padding:10px 0;border-top:1px solid var(--line);font-size:14px}
-          .sheet .li span{color:var(--muted);min-width:110px}
-          .sheet .li b{font-weight:600}
-          .opt{display:flex;gap:8px;margin:8px 0 4px}
-          .opt button{flex:1;padding:10px;border-radius:12px;background:var(--bg);font-weight:600}
-          .opt button.on{background:var(--accent);color:#fff}
+          .sheet .grab{width:40px;height:4px;border-radius:2px;background:var(--line);margin:0 auto 12px}
+          .sheet h2{font-family:var(--serif);font-weight:400;font-size:21px;margin:4px 0 10px;line-height:1.25}
+          .sec{font-family:var(--cond);font-weight:700;font-size:14px;text-transform:uppercase;letter-spacing:.5px;color:var(--accent);margin:18px 0 6px}
+          .li{display:flex;gap:12px;padding:10px 0;border-top:1px solid var(--line);font-size:14px}
+          .li > span{color:var(--muted);min-width:110px}
+          .li b{font-weight:600}
+          .opt{display:flex;gap:6px;margin:6px 0 4px}
+          .opt button{flex:1;padding:9px 4px;border-radius:999px;background:var(--bg);font-weight:600;font-size:14px}
+          .opt button.on{background:var(--green);color:#fff}
+          .sw{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--line);width:100%;text-align:left}
+          .sw .t{flex:1}
+          .sw .t small{display:block;color:var(--muted);font-size:12px}
+          .sw .k{width:42px;height:24px;border-radius:12px;background:var(--line);position:relative;flex:none;transition:background .2s}
+          .sw .k::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left .2s;box-shadow:0 1px 2px rgba(0,0,0,.25)}
+          .sw.on .k{background:var(--green)}
+          .sw.on .k::after{left:21px}
           .hint{font-size:12px;color:var(--muted);margin:6px 0 0}
-          .inp{width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit;font-size:16px;outline:none}
+          .inp{width:100%;padding:12px 14px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit;font-size:16px;outline:none}
           .inp:focus{border-color:var(--accent)}
-          .res{margin-top:6px}
-          .res button{display:block;width:100%;text-align:left;padding:11px 12px;border-radius:10px;font-weight:600}
-          .res button:active{background:var(--bg)}
-          .cur-grp{display:inline-block;padding:4px 10px;border-radius:8px;background:var(--accent-soft);color:var(--accent);font-weight:700;margin-left:6px}
+          .res{margin-top:6px;display:flex;flex-wrap:wrap;gap:6px}
+          .res button{padding:8px 14px;border-radius:999px;background:var(--mint);color:var(--mint-t);font-weight:700;font-family:var(--cond);font-size:15px}
+          .res button.on{background:var(--green);color:#fff}
+          .cur-grp{display:inline-block;padding:2px 10px;border-radius:999px;background:var(--mint);color:var(--mint-t);font-weight:700;margin-left:6px;font-family:var(--cond)}
+          .linkbtn{color:var(--accent);font-weight:600;padding:10px 0;display:block;border-top:1px solid var(--line);width:100%;text-align:left}
+          .linkbtn.danger{color:#C0392B}
+
+          /* ---- первый вход ---- */
+          #onb{position:fixed;inset:0;z-index:20;background:var(--bg);overflow:auto;display:none}
+          #onb.on{display:block}
+          .onb-top{background:var(--green);color:#fff;padding:34px 22px 56px;position:relative;overflow:hidden}
+          .onb-top::after{content:"";position:absolute;right:-30px;bottom:-40px;width:150px;height:150px;border-radius:50%;background:var(--yellow);opacity:.18}
+          .onb-top .mark{width:54px;height:54px;margin-bottom:14px}
+          .onb-top h1{font-family:var(--cond);font-weight:700;font-size:28px;text-transform:uppercase;letter-spacing:.4px;margin:0;line-height:1.1}
+          .onb-top p{margin:8px 0 0;opacity:.88;font-size:15px}
+          .onb-card{background:var(--card);margin:-34px 14px 20px;border-radius:8px;padding:18px 16px;box-shadow:0 4px 16px rgba(0,0,0,.1);position:relative}
+          .onb-card .sec:first-child{margin-top:0}
+          .onb-ok{margin-top:14px;padding:10px 12px;border-radius:6px;background:var(--mint);color:var(--mint-t);font-weight:600;display:none}
+          .onb-ok.on{display:block}
+          .onb-go{width:100%;margin-top:18px;padding:13px}
           </style>
           </head>
           <body>
-          <header>
-            <div class="top">
-              <h1>Расписание<span class="grp" id="grpLbl"></span></h1>
-              <button class="iconbtn" id="btnSet" aria-label="Настройки"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
-              <button class="iconbtn" id="btnRef" aria-label="Обновить"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg></button>
-            </div>
-            <p class="status" id="status"></p>
-          </header>
+          <div class="appbar">
+            <svg class="mark" viewBox="0 0 34 34" aria-hidden="true"><rect x="3" y="6" width="28" height="25" rx="4" fill="#fff"/><rect x="3" y="12" width="28" height="3" fill="#155231"/><rect x="9" y="2" width="3" height="8" rx="1.5" fill="#fff"/><rect x="22" y="2" width="3" height="8" rx="1.5" fill="#fff"/><circle cx="11" cy="21" r="2.4" fill="#F2C230"/><circle cx="17" cy="21" r="2.4" fill="#1E6E40"/><circle cx="23" cy="21" r="2.4" fill="#1E6E40"/><circle cx="11" cy="27" r="2.4" fill="#1E6E40"/><circle cx="17" cy="27" r="2.4" fill="#1E6E40"/></svg>
+            <div class="brand"><b>Расписание</b><span>ДальГАУ</span></div>
+            <button class="chip" id="grpChip"></button>
+            <button class="iconbtn" id="btnRef" aria-label="Обновить"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg></button>
+          </div>
+          <div class="crumbs" id="status"></div>
 
           <main>
             <section class="view on" id="vSched">
@@ -418,29 +473,48 @@ jobs:
               <div class="days" id="days"></div>
               <div id="dayBox"></div>
             </section>
-
-            <section class="view" id="vSubj">
-              <div id="subjBox"></div>
-            </section>
+            <section class="view" id="vSubj"><h2 class="h-serif">Предметы семестра</h2><div id="subjBox"></div></section>
+            <section class="view" id="vSet"><h2 class="h-serif">Настройки</h2><div id="setBox"></div></section>
           </main>
 
           <nav>
             <button class="on" data-v="vSched"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="3"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Расписание</button>
             <button data-v="vSubj"><svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5V21h16"/></svg>Предметы</button>
+            <button data-v="vSet"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Настройки</button>
           </nav>
 
           <div class="veil" id="veil"></div>
           <div class="sheet" id="sheet"><div class="grab"></div><div id="sheetBody"></div></div>
 
+          <div id="onb">
+            <div class="onb-top">
+              <svg class="mark" viewBox="0 0 34 34" aria-hidden="true"><rect x="3" y="6" width="28" height="25" rx="4" fill="#fff"/><rect x="3" y="12" width="28" height="3" fill="#155231"/><rect x="9" y="2" width="3" height="8" rx="1.5" fill="#fff"/><rect x="22" y="2" width="3" height="8" rx="1.5" fill="#fff"/><circle cx="11" cy="21" r="2.4" fill="#F2C230"/><circle cx="17" cy="21" r="2.4" fill="#1E6E40"/><circle cx="23" cy="21" r="2.4" fill="#1E6E40"/><circle cx="11" cy="27" r="2.4" fill="#1E6E40"/><circle cx="17" cy="27" r="2.4" fill="#1E6E40"/></svg>
+              <h1>Расписание<br>ДальГАУ</h1>
+              <p>Пары, аудитории и преподаватели вашей группы — всегда под рукой.</p>
+            </div>
+            <div class="onb-card">
+              <div class="sec">Ваша группа</div>
+              <input class="inp" id="oq" placeholder="Например, 7-1224" autocomplete="off" inputmode="text">
+              <div class="res" id="ores"></div>
+              <p class="hint" id="ohint">Начните вводить номер группы — покажу подходящие.</p>
+              <div class="onb-ok" id="ook"></div>
+              <div class="sec">Подгруппа</div>
+              <div class="opt" id="osub"></div>
+              <p class="hint">Если не знаете — оставьте «Все», это можно поменять в настройках.</p>
+              <button class="pill solid onb-go" id="ogo" disabled>Готово</button>
+            </div>
+          </div>
+
           <script>
           "use strict";
+          const APP_VERSION = "4.0";
           const SITE = "https://dalgau.fliptable.ru";
-          const DEFAULT_GROUP = { name: "7-1224", url: SITE + "/timetables/7113/groups/7-1224--9" };
           const SLOTS = ["8:00","9:45","11:30","14:00","15:45","17:30"];
           const DOW = ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"];
           const DOW_FULL = ["понедельник","вторник","среда","четверг","пятница","суббота","воскресенье"];
           const MON = ["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
           const MON_S = ["янв","фев","мар","апр","мая","июн","июл","авг","сен","окт","ноя","дек"];
+          const $ = id => document.getElementById(id);
 
           /* ---------- storage ---------- */
           const store = {
@@ -449,6 +523,18 @@ jobs:
             del(k){ try{ localStorage.removeItem(k); }catch(e){} },
             keys(){ try{ return Object.keys(localStorage); }catch(e){ return []; } }
           };
+
+          /* ---------- настройки ---------- */
+          const PREF_DEFAULTS = { theme: "auto", showNow: true, hidePast: false, shortNames: false, compact: false, big: false, showSunday: false, weekendNext: true };
+          const P = Object.assign({}, PREF_DEFAULTS, store.get("prefs", {}));
+          function savePrefs(){ store.set("prefs", P); applyPrefs(); }
+          function isDarkNow(){ return P.theme === "dark" || (P.theme === "auto" && window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches); }
+          function applyPrefs(){
+            document.documentElement.dataset.theme = P.theme;
+            document.body.classList.toggle("compact", !!P.compact);
+            document.body.classList.toggle("big", !!P.big);
+            try { if (window.Native && Native.setTheme) Native.setTheme(isDarkNow()); } catch(e) {}
+          }
 
           /* ---------- dates ---------- */
           const pad = n => String(n).padStart(2,"0");
@@ -463,9 +549,7 @@ jobs:
           function dur(min){
             min = Math.max(0, Math.round(min));
             const h = Math.floor(min/60), m = min%60;
-            if (!h) return m+" мин";
-            if (!m) return h+" ч";
-            return h+" ч "+m+" мин";
+            if (!h) return m+" мин"; if (!m) return h+" ч"; return h+" ч "+m+" мин";
           }
           function plural(n, a, b, c){ const n10=n%10, n100=n%100;
             if (n10===1 && n100!==11) return a; if (n10>=2&&n10<=4&&(n100<10||n100>=20)) return b; return c; }
@@ -480,33 +564,30 @@ jobs:
             if (s.startsWith("ПРАКТ")) return {k:"pr", t:"Практика"};
             if (s.startsWith("ЛАБ")) return {k:"lab", t:"Лаба"};
             if (!s) return {k:"oth", t:"Занятие"};
-            const t = s.charAt(0)+s.slice(1).toLowerCase().replace(/\.$/,"");
-            return {k:"oth", t};
+            return {k:"oth", t: s.charAt(0)+s.slice(1).toLowerCase().replace(/\.$/,"")};
           }
 
-          /* ---------- teachers: "Профессор, Курков Ю.Б." ---------- */
-          const FIO = store.get("fio", {});           // "Курков Ю.Б." -> {full:"Курков Юрий Борисович"} | {miss:ts}
+          /* ---------- преподаватели ---------- */
+          const FIO = store.get("fio", {});
           function splitTeacher(t){
             t = (t||"").trim(); const i = t.lastIndexOf(",");
             return i > 0 ? { pos: t.slice(0,i).trim(), short: t.slice(i+1).trim() } : { pos: "", short: t };
           }
-          function fullName(short){ const f = FIO[short]; return f && f.full ? f.full : short; }
+          function fullName(short){ if (P.shortNames) return short; const f = FIO[short]; return f && f.full ? f.full : short; }
           function teacherList(t){ return (t||"").split(";").map(x => x.trim()).filter(Boolean).map(splitTeacher); }
           function teacherNames(t){ return teacherList(t).map(x => fullName(x.short)).join(", "); }
-          function teacherFull(t){ return teacherList(t).map(x => fullName(x.short) + (x.pos ? " ("+x.pos.toLowerCase()+")" : "")).join("; "); }
+          function teacherFull(t){ return teacherList(t).map(x => { const f = FIO[x.short]; return (f && f.full ? f.full : x.short) + (x.pos ? " ("+x.pos.toLowerCase()+")" : ""); }).join("; "); }
 
-          /* ---------- parse week page ---------- */
+          /* ---------- разбор страниц ---------- */
           function parseWeek(html, monday){
             const doc = new DOMParser().parseFromString(html, "text/html");
             let tables = doc.querySelectorAll(".media-lessons-table table.group_timetable");
             if (!tables.length) tables = doc.querySelectorAll("table.group_timetable");
             if (!tables.length) throw new Error("not-timetable");
-            const seen = new Set(); const out = [];
-            let di = -1;
+            const seen = new Set(); const out = []; let di = -1;
             tables.forEach(tb => {
               const key = ((tb.querySelector(".date")||{}).textContent || "").trim();
-              if (seen.has(key)) return; seen.add(key);
-              di++;
+              if (seen.has(key)) return; seen.add(key); di++;
               const date = iso(addDays(monday, di));
               let start = null, end = null;
               tb.querySelectorAll("tbody > tr > td").forEach(td => {
@@ -514,8 +595,7 @@ jobs:
                 if (tp){
                   const h = [...tp.querySelectorAll(".hours")].map(x=>x.textContent.trim());
                   const m = [...tp.querySelectorAll(".minutes")].map(x=>x.textContent.trim());
-                  start = h[0]+":"+m[0]; end = h[1]+":"+m[1];
-                  return;
+                  start = h[0]+":"+m[0]; end = h[1]+":"+m[1]; return;
                 }
                 if (!td.classList.contains("filled") || !start) return;
                 td.querySelectorAll(".lesson").forEach(ls => {
@@ -534,8 +614,6 @@ jobs:
             });
             return out;
           }
-
-          /* ---------- parse ics ---------- */
           function parseIcs(text){
             if (text.indexOf("BEGIN:VCALENDAR") < 0) throw new Error("not-ics");
             const un = [];
@@ -561,7 +639,7 @@ jobs:
             return ev.map(e => ({ date: e.s.date, start: e.s.time, end: e.e ? e.e.time : "", name: (e.name||"").replace(/^\([^)]*\)\s*/,""), room: e.room||"", teacher: e.teacher||"" }));
           }
 
-          /* ---------- network (через Android, с повторами) ---------- */
+          /* ---------- сеть (через Android, с повторами) ---------- */
           const pending = {}; let seq = 0;
           window.__nativeDone = (id, ok, body, url) => { const p = pending[id]; if (!p) return; delete pending[id]; ok ? p.res({body, url: url || ""}) : p.rej(new Error(body)); };
           let active = 0; const waitQ = [];
@@ -596,51 +674,44 @@ jobs:
             return "сайт вуза недоступен";
           }
 
-          /* ---------- state ---------- */
+          /* ---------- состояние ---------- */
           const S = {
-            group: store.get("group", DEFAULT_GROUP),
-            monday: mondayOf(new Date()),
-            sel: todayIso(),
-            weeks: {},
-            ics: null, icsErr: null, icsLoading: false,
+            group: store.get("group", null),
+            monday: mondayOf(new Date()), sel: todayIso(),
+            weeks: {}, ics: null, icsErr: null, icsLoading: false,
             sub: store.get("sub", "all"),
-            loading: 0, err: null, slowTimer: null, slow: false
+            loading: 0, err: null, slowTimer: null, slow: false, showPast: false
           };
-          const gk = k => "g:" + S.group.name + ":" + k;
-          S.ics = store.get(gk("ics"), null);
+          const gk = k => "g:" + (S.group ? S.group.name : "-") + ":" + k;
 
           function setStatus(){
-            const el = document.getElementById("status");
-            document.getElementById("grpLbl").textContent = "Группа " + S.group.name + " · ДальГАУ";
+            const el = $("status");
+            $("grpChip").textContent = S.group ? "гр. " + S.group.name : "";
             const w = S.weeks[iso(S.monday)];
-            if (S.loading) {
-              el.textContent = S.slow ? "Сайт вуза отвечает медленно, жду…" : "Обновляю…";
-              el.className = "status"; return;
-            }
+            if (S.loading) { el.textContent = S.slow ? "Сайт вуза отвечает медленно, жду…" : "Обновляю…"; el.className = "crumbs"; return; }
             if (S.err) {
               const t = w ? new Date(w.ts) : null;
               el.textContent = "Не обновилось: " + S.err + (t ? ". Показана версия от " + (iso(t) === todayIso() ? hhmm(t) : t.getDate()+" "+MON_S[t.getMonth()]+" "+hhmm(t)) : "") + ". Повторю через минуту";
-              el.className = "status off"; return;
+              el.className = "crumbs off"; return;
             }
-            if (!w) { el.textContent = ""; el.className = "status"; return; }
+            if (!w) { el.textContent = ""; el.className = "crumbs"; return; }
             const t = new Date(w.ts);
-            el.textContent = "Обновлено " + (iso(t) === todayIso() ? "сегодня в " + hhmm(t) : t.getDate()+" "+MON[t.getMonth()]+" в "+hhmm(t));
-            el.className = "status";
+            el.textContent = "Главная › Расписание · обновлено " + (iso(t) === todayIso() ? "в " + hhmm(t) : t.getDate()+" "+MON_S[t.getMonth()]+" в "+hhmm(t));
+            el.className = "crumbs";
           }
           function busy(delta){
             S.loading += delta;
-            document.getElementById("btnRef").classList.toggle("spin", S.loading > 0);
+            $("btnRef").classList.toggle("spin", S.loading > 0);
             clearTimeout(S.slowTimer);
-            if (S.loading > 0) { S.slowTimer = setTimeout(() => { S.slow = true; setStatus(); }, 6000); }
-            else S.slow = false;
+            if (S.loading > 0) S.slowTimer = setTimeout(() => { S.slow = true; setStatus(); }, 6000); else S.slow = false;
             setStatus();
           }
 
           async function loadWeek(monday, force){
+            if (!S.group) return false;
             const key = iso(monday);
             if (!S.weeks[key]) { const c = store.get(gk("w:"+key), null); if (c) S.weeks[key] = c; }
-            const fresh = S.weeks[key] && Date.now() - S.weeks[key].ts < 15*60*1000;
-            if (fresh && !force) return true;
+            if (S.weeks[key] && !force && Date.now() - S.weeks[key].ts < 15*60*1000) return true;
             busy(1);
             try {
               const r = await httpGet(S.group.url + "?week=" + key);
@@ -653,8 +724,8 @@ jobs:
             } catch (e) { S.err = errText(e); return false; }
             finally { busy(-1); }
           }
-
           async function loadIcs(force){
+            if (!S.group) return;
             if (S.ics && !force && Date.now() - S.ics.ts < 6*3600*1000) return;
             if (S.icsLoading) return;
             S.icsLoading = true; S.icsErr = null; renderSubjectsIfOpen();
@@ -667,7 +738,6 @@ jobs:
             S.icsLoading = false; renderSubjectsIfOpen();
           }
 
-          /* полные ФИО через поиск сайта */
           let fioRunning = false; const fioQueue = new Set();
           function resolveTeachers(list){
             list.forEach(t => teacherList(t).forEach(x => {
@@ -685,54 +755,51 @@ jobs:
               const ini = short.slice(sur.length).replace(/[\s.]/g,"");
               try {
                 const r = await httpGet(SITE + "/search?term=" + encodeURIComponent(sur), true);
-                const arr = JSON.parse(r.body);
-                const names = arr.map(x => String(x.label || x.value || "").split(" , ")[0].replace(/\s+/g," ").trim());
+                const names = JSON.parse(r.body).map(x => String(x.label || x.value || "").split(" , ")[0].replace(/\s+/g," ").trim());
                 const hit = names.find(n => { const p = n.split(" "); return p[0] === sur && p.length >= 2 && p[1][0] === ini[0] && (!ini[1] || (p[2]||"")[0] === ini[1]); });
                 FIO[short] = hit ? { full: hit } : { miss: Date.now() };
                 store.set("fio", FIO);
                 renderDay(); renderSubjectsIfOpen();
-              } catch (e) { /* попробуем в следующий раз */ }
+              } catch (e) {}
             }
             fioRunning = false;
           }
 
-          /* ---------- filtering ---------- */
+          /* ---------- выборки ---------- */
           const bySub = l => S.sub === "all" || !l.sub || l.sub.toUpperCase() === S.sub;
           function dayLessons(dateIso){
             const w = S.weeks[iso(mondayOf(fromIso(dateIso)))];
             if (!w) return null;
             return w.lessons.filter(l => l.date === dateIso && bySub(l)).sort((a,b) => toMin(a.start)-toMin(b.start));
           }
-          /* сколько занятия уже прошло: 0..1 */
           function progressOf(l){
             const td = todayIso();
-            if (l.date < td) return 1;
-            if (l.date > td) return 0;
+            if (l.date < td) return 1; if (l.date > td) return 0;
             const t = nowMinF(), s = toMin(l.start), e = toMin(l.end);
             return Math.min(1, Math.max(0, (t - s) / (e - s)));
           }
 
-          /* ---------- render: now card ---------- */
+          /* ---------- «Сейчас» ---------- */
           function renderNow(){
-            const box = document.getElementById("now");
-            const ls = dayLessons(todayIso());
+            const box = $("now");
+            const ls = P.showNow ? dayLessons(todayIso()) : null;
             if (!ls) { box.innerHTML = ""; return; }
             const t = nowMinF();
             const where = l => l.room ? " · ауд. "+esc(l.room.replace(/\s*\(№\d+\)/,"")) : "";
             const cur = ls.find(l => toMin(l.start) <= t && t < toMin(l.end));
             const next = ls.find(l => toMin(l.start) > t);
             const left = ls.filter(l => toMin(l.end) > t).length;
-            let html = "";
+            let html;
             if (cur) {
               const s = toMin(cur.start), e = toMin(cur.end), p = Math.round((t-s)/(e-s)*100);
-              html = `<div class="now"><div class="lbl">Сейчас идёт · ${cur.num ? cur.num+" пара" : esc(cur.kindT)}</div>
+              html = `<div class="now"><div class="lbl"><i></i>Сейчас идёт · ${cur.num ? cur.num+" пара" : esc(cur.kindT)}</div>
                 <div class="big">${esc(cur.name)}</div><div class="sub">${esc(cur.kindT)}${where(cur)}</div>
                 <div class="bar"><i style="width:${p}%"></i></div>
                 <div class="row"><span>${cur.start} – ${cur.end} · ${p}%</span><span>до конца ${dur(e-t)}</span></div>
                 <div class="next">${next ? `Дальше в ${next.start}: ${esc(next.name)}${where(next)} · ещё ${pairs(left-1)} после этой` : "Это последняя пара сегодня 🎉"}</div></div>`;
             } else if (next) {
               const first = toMin(ls[0].start) > t;
-              html = `<div class="now rest"><div class="lbl">${first ? "Первая пара" : "Перерыв"} · через ${dur(toMin(next.start)-t)}</div>
+              html = `<div class="now rest"><div class="lbl"><i></i>${first ? "Первая пара" : "Перерыв"} · через ${dur(toMin(next.start)-t)}</div>
                 <div class="big">${esc(next.name)}</div><div class="sub">${next.start} – ${next.end} · ${esc(next.kindT)}${where(next)}</div>
                 <div class="next">Сегодня осталось ${pairs(left)}, конец в ${ls[ls.length-1].end}</div></div>`;
             } else {
@@ -740,14 +807,13 @@ jobs:
               let nx = "";
               if (tl && tl.length) nx = `Завтра ${pairs(tl.length)}, первая в ${tl[0].start} — ${esc(tl[0].name)}`;
               else if (tl) nx = "Завтра пар нет — отдыхайте";
-              html = `<div class="now done"><div class="lbl">${ls.length ? "Пары закончились" : "Сегодня пар нет"}</div>
-                <div class="big">${ls.length ? "На сегодня всё 🎉" : "Свободный день ☕"}</div>
-                ${nx ? `<div class="sub">${nx}</div>` : ""}</div>`;
+              html = `<div class="now done"><div class="lbl"><i></i>${ls.length ? "Пары закончились" : "Сегодня пар нет"}</div>
+                <div class="big">${ls.length ? "На сегодня всё 🎉" : "Свободный день ☕"}</div>${nx ? `<div class="sub">${nx}</div>` : ""}</div>`;
             }
             box.innerHTML = html;
           }
 
-          /* ---------- render: week + day ---------- */
+          /* ---------- неделя и день ---------- */
           const ICON_PIN = '<svg viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>';
           const ICON_USER = '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>';
 
@@ -755,30 +821,27 @@ jobs:
             const m = S.monday, sun = addDays(m, 6);
             const diff = Math.round((m - mondayOf(new Date())) / (7*864e5));
             const label = diff === 0 ? "Эта неделя" : diff === 1 ? "Следующая неделя" : diff === -1 ? "Прошлая неделя" : (diff > 0 ? "Через "+diff+" нед." : Math.abs(diff)+" нед. назад");
-            document.getElementById("wRange").innerHTML =
-              `${m.getDate()} ${m.getMonth()!==sun.getMonth() ? MON_S[m.getMonth()]+" " : ""}– ${sun.getDate()} ${MON_S[sun.getMonth()]}<small>${label}</small>`;
+            $("wRange").innerHTML = `${m.getDate()} ${m.getMonth()!==sun.getMonth() ? MON_S[m.getMonth()]+" " : ""}– ${sun.getDate()} ${MON_S[sun.getMonth()]}<small>${label}</small>`;
             const w = S.weeks[iso(m)];
-            const n = w && w.lessons.some(l => l.date === iso(sun) && bySub(l)) ? 7 : 6;
+            const n = P.showSunday || (w && w.lessons.some(l => l.date === iso(sun) && bySub(l))) ? 7 : 6;
             let h = "";
             for (let i = 0; i < n; i++){
               const d = addDays(m, i), di = iso(d);
               const ls = w ? w.lessons.filter(l => l.date === di && bySub(l)) : [];
               const dots = ls.slice(0,6).map(l => `<i class="${progressOf(l) >= 1 ? "p" : ""}"></i>`).join("");
-              h += `<button class="day${di===S.sel?" sel":""}${di===todayIso()?" today":""}" data-d="${di}">
-                <span>${DOW[i]}</span><b>${d.getDate()}</b><div class="dots">${dots}</div></button>`;
+              h += `<button class="day${di===S.sel?" sel":""}${di===todayIso()?" today":""}" data-d="${di}"><span>${DOW[i]}</span><b>${d.getDate()}</b><div class="dots">${dots}</div></button>`;
             }
-            const box = document.getElementById("days");
-            box.style.setProperty("--n", n); box.innerHTML = h;
+            $("days").style.setProperty("--n", n); $("days").innerHTML = h;
           }
 
           function renderDay(){
-            const box = document.getElementById("dayBox");
+            const box = $("dayBox");
             const ls = dayLessons(S.sel);
             const d = fromIso(S.sel);
             if (ls === null) {
               box.innerHTML = S.loading ? `<div class="empty"><div class="em">⏳</div><b>Загружаю расписание</b>${S.slow ? "Сайт вуза отвечает медленно, подождите немного" : ""}</div>`
-                : `<div class="empty"><div class="em">📡</div><b>Не удалось загрузить</b>${esc(S.err || "Проверьте интернет")}<br><button class="btn" id="retryDay">Повторить</button></div>`;
-              const b = document.getElementById("retryDay"); if (b) b.onclick = () => loadWeek(mondayOf(d), true).then(renderAll);
+                : `<div class="empty"><div class="em">📡</div><b>Не удалось загрузить</b>${esc(S.err || "Проверьте интернет")}<br><button class="pill" id="retryDay">Повторить</button></div>`;
+              const b = $("retryDay"); if (b) b.onclick = () => loadWeek(mondayOf(d), true).then(renderAll);
               return;
             }
             if (!ls.length) {
@@ -786,32 +849,33 @@ jobs:
               box.innerHTML = `<div class="empty"><div class="em">${wk ? "🛋️" : "🎈"}</div><b>${wk ? "Выходной" : "Пар нет"}</b>${DOW_FULL[(d.getDay()+6)%7]}, ${d.getDate()} ${MON[d.getMonth()]}</div>`;
               return;
             }
-            const t = nowMinF();
-            const isToday = S.sel === todayIso();
+            const t = nowMinF(), isToday = S.sel === todayIso();
             const prog = ls.map(progressOf);
-            const doneN = prog.filter(p => p >= 1).length;
-            const leftN = ls.length - doneN;
+            const doneN = prog.filter(p => p >= 1).length, leftN = ls.length - doneN;
             const first = toMin(ls[0].start), last = toMin(ls[ls.length-1].end);
             let head;
             if (isToday && t >= first && t < last) head = `<b>Прошло ${doneN} из ${ls.length}</b><span>осталось ${pairs(leftN)} · до конца дня ${dur(last - t)}</span>`;
             else if (isToday && t < first) head = `<b>${pairs(ls.length)}</b><span>начало в ${ls[0].start}, через ${dur(first - t)}</span>`;
             else if (prog.every(p => p >= 1)) head = `<b>Все ${pairs(ls.length)} прошли</b><span>${ls[0].start} – ${ls[ls.length-1].end}</span>`;
             else head = `<b>${pairs(ls.length)}</b><span>${ls[0].start} – ${ls[ls.length-1].end} · в вузе ${dur(last-first)}</span>`;
-            let h = `<div class="dprog"><div class="row">${head}</div>
-              <div class="bar">${prog.map(p => `<i style="--p:${Math.round(p*100)}%"></i>`).join("")}</div></div>`;
+            let h = `<div class="dprog"><div class="row">${head}</div><div class="bar">${prog.map(p => `<i style="--p:${Math.round(p*100)}%"></i>`).join("")}</div></div>`;
 
+            const hideDone = P.hidePast && isToday && !S.showPast && doneN > 0 && doneN < ls.length;
+            if (hideDone) h += `<div class="hidden-note">Скрыто прошедших: ${doneN} · <button id="showPast">показать</button></div>`;
+            let prevEnd = null;
             ls.forEach((l, i) => {
-              if (i > 0) {
-                const ge = toMin(ls[i-1].end), gs = toMin(l.start), g = gs - ge;
+              const p = prog[i];
+              if (hideDone && p >= 1) return;
+              if (prevEnd !== null) {
+                const ge = prevEnd, gs = toMin(l.start), g = gs - ge;
                 if (g >= 30) {
                   const inGap = isToday && t >= ge && t < gs;
                   const word = ge <= 13*60 && gs >= 14*60 && g <= 75 ? "Обед" : (g >= 60 ? "Окно" : "Перерыв");
                   h += `<div class="gap${inGap ? " now" : ""}">${inGap ? "Сейчас " + word.toLowerCase() + " · ещё " + dur(gs - t) : word + " · " + dur(g)}</div>`;
                 }
               }
-              const p = prog[i];
-              const s = toMin(l.start), e = toMin(l.end);
-              const cur = p > 0 && p < 1;
+              prevEnd = toMin(l.end);
+              const s = toMin(l.start), e = toMin(l.end), cur = p > 0 && p < 1;
               let progTxt = "";
               if (cur) progTxt = `<div class="prog">Идёт · ${Math.round(p*100)}% · осталось ${dur(e - t)}</div>`;
               else if (p >= 1) progTxt = `<div class="prog">✓ Прошла</div>`;
@@ -828,49 +892,34 @@ jobs:
             });
             box.innerHTML = h;
             box.querySelectorAll(".lesson").forEach(el => el.onclick = () => openLesson(ls[+el.dataset.i]));
+            const sp = $("showPast"); if (sp) sp.onclick = () => { S.showPast = true; renderDay(); };
           }
 
-          /* ---------- subjects (semester) ---------- */
-          function semesterRange(){
-            const n = new Date(), y = n.getFullYear();
-            return n.getMonth() >= 6 ? [y+"-07-01", (y+1)+"-01-31"] : [y+"-01-01", y+"-07-31"];
-          }
-          function semEvents(){
-            if (!S.ics) return [];
-            const [a, b] = semesterRange();
-            return S.ics.events.filter(e => e.date >= a && e.date <= b);
-          }
-          function isDone(e){
-            const td = todayIso();
-            return e.date < td || (e.date === td && toMin(e.end || e.start) <= nowMinF());
-          }
+          /* ---------- предметы ---------- */
+          function semesterRange(){ const n = new Date(), y = n.getFullYear(); return n.getMonth() >= 6 ? [y+"-07-01", (y+1)+"-01-31"] : [y+"-01-01", y+"-07-31"]; }
+          function semEvents(){ if (!S.ics) return []; const [a, b] = semesterRange(); return S.ics.events.filter(e => e.date >= a && e.date <= b); }
+          function isDone(e){ const td = todayIso(); return e.date < td || (e.date === td && toMin(e.end || e.start) <= nowMinF()); }
           const evKey = e => e.date + p4(toMin(e.start));
           function fmtDate(di){ const d = fromIso(di); return DOW[(d.getDay()+6)%7]+", "+d.getDate()+" "+MON[d.getMonth()]; }
-
           function subjectList(){
             const map = {};
-            semEvents().forEach(e => {
-              const s = map[e.name] = map[e.name] || { name: e.name, all: [], teachers: new Set() };
-              s.all.push(e); if (e.teacher) s.teachers.add(e.teacher);
-            });
+            semEvents().forEach(e => { const s = map[e.name] = map[e.name] || { name: e.name, all: [], teachers: new Set() }; s.all.push(e); if (e.teacher) s.teachers.add(e.teacher); });
             return Object.values(map).map(s => {
               s.all.sort((a,b) => evKey(a).localeCompare(evKey(b)));
-              s.done = s.all.filter(isDone).length; s.left = s.all.length - s.done;
-              s.next = s.all.find(e => !isDone(e));
+              s.done = s.all.filter(isDone).length; s.left = s.all.length - s.done; s.next = s.all.find(e => !isDone(e));
               return s;
             }).sort((a,b) => (a.next ? evKey(a.next) : "9").localeCompare(b.next ? evKey(b.next) : "9") || b.left - a.left);
           }
-
-          function renderSubjectsIfOpen(){ if (document.getElementById("vSubj").classList.contains("on")) renderSubjects(); }
+          function renderSubjectsIfOpen(){ if ($("vSubj").classList.contains("on")) renderSubjects(); }
           function renderSubjects(){
-            const box = document.getElementById("subjBox");
+            const box = $("subjBox");
             const intro = `<p class="intro">Сколько занятий по каждому предмету уже прошло и сколько осталось до конца семестра. Нажмите на предмет — покажу все оставшиеся даты.</p>`;
             const ev = semEvents();
             if (!ev.length) {
               if (S.icsLoading) box.innerHTML = intro + `<div class="empty"><div class="em">⏳</div><b>Загружаю весь семестр</b>Сайт вуза отдаёт его небыстро — до минуты</div>`;
-              else if (S.icsErr) box.innerHTML = intro + `<div class="empty"><div class="em">📡</div><b>Не удалось загрузить</b>${esc(S.icsErr)}<br><button class="btn" id="retryIcs">Повторить</button></div>`;
+              else if (S.icsErr) box.innerHTML = intro + `<div class="empty"><div class="em">📡</div><b>Не удалось загрузить</b>${esc(S.icsErr)}<br><button class="pill" id="retryIcs">Повторить</button></div>`;
               else box.innerHTML = intro + `<div class="empty"><div class="em">📚</div><b>В этом семестре занятий не найдено</b></div>`;
-              const b = document.getElementById("retryIcs"); if (b) b.onclick = () => loadIcs(true);
+              const b = $("retryIcs"); if (b) b.onclick = () => loadIcs(true);
               return;
             }
             const done = ev.filter(isDone).length;
@@ -879,23 +928,22 @@ jobs:
             const list = subjectList();
             let h = intro + `<div class="sem"><h3>Семестр: ${Math.round(done/ev.length*100)}% позади</h3>
               <p>Осталось ${pairs(ev.length-done)} · последние занятия ${fmtDate(last).toLowerCase()} (через ${daysLeft} ${plural(daysLeft,"день","дня","дней")})</p>
-              <div class="bar"><i style="width:${(done/ev.length*100).toFixed(1)}%"></i></div>
-              <div class="row"><span>Прошло ${done} из ${ev.length}</span><span>${list.length} ${plural(list.length,"предмет","предмета","предметов")}</span></div></div>`;
+              <div class="bar2"><i style="width:${(done/ev.length*100).toFixed(1)}%"></i></div>
+              <div class="row2"><span>Прошло ${done} из ${ev.length}</span><span>${list.length} ${plural(list.length,"предмет","предмета","предметов")}</span></div></div>`;
             list.forEach((s, i) => {
               h += `<div class="subj" data-i="${i}"><div class="ttl">${esc(s.name)}</div>
                 <div class="meta">${ICON_USER}${esc([...s.teachers].map(teacherNames).join(", "))}</div>
-                <div class="bar"><i style="width:${(s.done/s.all.length*100).toFixed(1)}%"></i></div>
-                <div class="row"><span>Прошло ${s.done} из ${s.all.length}</span><span>осталось ${pairs(s.left)}</span></div>
+                <div class="bar2"><i style="width:${(s.done/s.all.length*100).toFixed(1)}%"></i></div>
+                <div class="row2"><span>Прошло ${s.done} из ${s.all.length}</span><span>осталось ${pairs(s.left)}</span></div>
                 <div class="nx">${s.next ? "Следующее: <b>"+fmtDate(s.next.date)+", "+s.next.start+"</b>"+(s.next.room ? " · "+esc(s.next.room) : "") : "Занятия по предмету закончились ✅"}</div></div>`;
             });
             box.innerHTML = h;
             box.querySelectorAll(".subj").forEach(el => el.onclick = () => openSubject(list[+el.dataset.i]));
           }
 
-          /* ---------- sheets ---------- */
-          function openSheet(html){ document.getElementById("sheetBody").innerHTML = html; document.getElementById("veil").classList.add("on"); document.getElementById("sheet").classList.add("on"); }
-          function closeSheet(){ const s = document.getElementById("sheet"); if (!s.classList.contains("on")) return false; s.classList.remove("on"); document.getElementById("veil").classList.remove("on"); const a = document.activeElement; if (a && a.blur) a.blur(); return true; }
-
+          /* ---------- шторка ---------- */
+          function openSheet(html){ $("sheetBody").innerHTML = html; $("veil").classList.add("on"); $("sheet").classList.add("on"); }
+          function closeSheet(){ const s = $("sheet"); if (!s.classList.contains("on")) return false; s.classList.remove("on"); $("veil").classList.remove("on"); const a = document.activeElement; if (a && a.blur) a.blur(); return true; }
           function openLesson(l){
             const ev = semEvents().filter(e => e.name === l.name);
             const done = ev.filter(isDone).length;
@@ -913,48 +961,36 @@ jobs:
             }
             openSheet(h);
           }
-
           function openSubject(s){
             const up = s.all.filter(e => !isDone(e));
             let h = `<h2>${esc(s.name)}</h2>
               <div class="li"><span>Преподаватели</span><b>${esc([...s.teachers].map(teacherFull).join("; "))}</b></div>
               <div class="li"><span>Прогресс</span><b>прошло ${s.done} из ${s.all.length}, осталось ${pairs(s.left)}</b></div>
-              <h4>${up.length ? "Оставшиеся занятия" : "Все занятия прошли"}</h4>`;
+              <div class="sec">${up.length ? "Оставшиеся занятия" : "Все занятия прошли"}</div>`;
             up.forEach(e => { h += `<div class="li"><span>${fmtDate(e.date)}</span><b>${e.start}${e.room ? " · "+esc(e.room) : ""}</b></div>`; });
             openSheet(h);
           }
 
-          let searchTimer = null, searchSeq = 0;
-          function openSettings(){
-            const b = v => `<button data-s="${v}" class="${S.sub===v?"on":""}">${v==="all"?"Все":"Подгр. "+v}</button>`;
-            openSheet(`<h2>Настройки</h2>
-              <div style="font-weight:600">Группа <span class="cur-grp">${esc(S.group.name)}</span></div>
-              <input class="inp" id="gq" placeholder="Номер группы, например 7-1225" autocomplete="off" style="margin-top:10px">
-              <div class="res" id="gres"></div>
-              <p class="hint" id="ghint">Начните вводить номер — покажу подходящие группы.</p>
-              <h4>Моя подгруппа</h4>
-              <div class="opt">${b("all")}${b("А")}${b("Б")}</div>
-              <p class="hint">Занятия другой подгруппы будут скрыты. Общие пары показываются всегда.</p>`);
-            document.querySelectorAll("#sheetBody [data-s]").forEach(x => x.onclick = () => {
-              S.sub = x.dataset.s; store.set("sub", S.sub); openSettings(); renderAll();
-            });
-            const q = document.getElementById("gq");
-            q.oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => searchGroups(q.value.trim()), 350); };
-          }
-          async function searchGroups(term){
-            const res = document.getElementById("gres"), hint = document.getElementById("ghint");
-            if (!res) return;
-            if (term.length < 2) { res.innerHTML = ""; hint.textContent = "Начните вводить номер — покажу подходящие группы."; return; }
-            const my = ++searchSeq;
-            hint.textContent = "Ищу…";
-            try {
-              const r = await httpGet(SITE + "/search?term=" + encodeURIComponent(term), true);
-              if (my !== searchSeq) return;
-              const names = JSON.parse(r.body).map(x => String(x.value || x.label || "")).filter(n => /^\d/.test(n)).slice(0, 12);
-              res.innerHTML = names.map(n => `<button data-g="${esc(n)}">Группа ${esc(n)}</button>`).join("");
-              hint.textContent = names.length ? "Выберите свою группу" : "Ничего не нашлось";
-              res.querySelectorAll("[data-g]").forEach(x => x.onclick = () => chooseGroup(x.dataset.g));
-            } catch (e) { if (my === searchSeq) hint.textContent = "Не получилось: " + errText(e); }
+          /* ---------- поиск групп (общий для первого входа и настроек) ---------- */
+          function groupSearch(inputEl, resEl, hintEl, onPick){
+            let timer = null, my = 0;
+            inputEl.oninput = () => { clearTimeout(timer); timer = setTimeout(go, 350); };
+            async function go(){
+              const term = inputEl.value.trim();
+              if (term.length < 2) { resEl.innerHTML = ""; hintEl.textContent = "Начните вводить номер группы — покажу подходящие."; return; }
+              const id = ++my; hintEl.textContent = "Ищу…";
+              try {
+                const r = await httpGet(SITE + "/search?term=" + encodeURIComponent(term), true);
+                if (id !== my) return;
+                const names = JSON.parse(r.body).map(x => String(x.value || x.label || "")).filter(n => /^\d/.test(n)).slice(0, 15);
+                resEl.innerHTML = names.map(n => `<button data-g="${esc(n)}">${esc(n)}</button>`).join("");
+                hintEl.textContent = names.length ? "Нажмите на свою группу" : "Ничего не нашлось — проверьте номер";
+                resEl.querySelectorAll("[data-g]").forEach(x => x.onclick = () => {
+                  resEl.querySelectorAll("button").forEach(b => b.classList.toggle("on", b === x));
+                  onPick(x.dataset.g);
+                });
+              } catch (e) { if (id === my) hintEl.textContent = "Не получилось: " + errText(e) + ". Попробуйте ещё раз."; }
+            }
           }
           async function resolveGroupUrl(name){
             const r = await httpGet(SITE + "/search?term=" + encodeURIComponent(name));
@@ -962,40 +998,113 @@ jobs:
             if (!m) throw new Error("not-found");
             return SITE + m[0];
           }
-          async function chooseGroup(name){
-            const hint = document.getElementById("ghint");
-            if (hint) hint.textContent = "Открываю расписание группы " + name + "…";
-            try {
-              const url = await resolveGroupUrl(name);
-              setGroup({ name, url });
-              closeSheet();
-            } catch (e) { if (hint) hint.textContent = /not-found/.test(e.message) ? "Не нашёл расписание этой группы" : "Не получилось: " + errText(e); }
-          }
           function setGroup(g){
-            const changed = g.name !== S.group.name || g.url !== S.group.url;
-            if (g.url !== S.group.url) store.keys().filter(k => k.startsWith("g:" + g.name + ":")).forEach(k => store.del(k));
+            const changed = !S.group || g.name !== S.group.name || g.url !== S.group.url;
+            if (S.group && g.url !== S.group.url) store.keys().filter(k => k.startsWith("g:" + g.name + ":")).forEach(k => store.del(k));
             S.group = g; store.set("group", g); store.set("groupChecked", Date.now());
             if (!changed) return;
             S.weeks = {}; S.ics = store.get(gk("ics"), null); S.icsErr = null; S.err = null;
             S.monday = mondayOf(new Date()); S.sel = todayIso();
             renderAll();
-            loadWeek(S.monday, true).then(() => { renderAll(); loadIcs(true); });
+            refreshAll(true);
           }
-          /* раз в сутки проверяем, не сменилась ли ссылка на расписание группы (новый семестр) */
           async function recheckGroup(){
-            if (Date.now() - store.get("groupChecked", 0) < 864e5) return;
+            if (!S.group || Date.now() - store.get("groupChecked", 0) < 864e5) return;
             try { const url = await resolveGroupUrl(S.group.name); setGroup({ name: S.group.name, url }); } catch (e) {}
           }
 
-          /* ---------- glue ---------- */
+          /* ---------- первый вход ---------- */
+          function showOnboarding(){
+            $("onb").classList.add("on");
+            let picked = null, sub = S.sub || "all";
+            const subBtns = () => { $("osub").innerHTML = ["all","А","Б"].map(v => `<button data-s="${v}" class="${sub===v?"on":""}">${v==="all"?"Все":"Подгруппа "+v}</button>`).join("");
+              $("osub").querySelectorAll("[data-s]").forEach(b => b.onclick = () => { sub = b.dataset.s; subBtns(); }); };
+            subBtns();
+            groupSearch($("oq"), $("ores"), $("ohint"), async (name) => {
+              picked = null; $("ogo").disabled = true;
+              $("ook").className = "onb-ok on"; $("ook").textContent = "Открываю расписание группы " + name + "…";
+              try {
+                const url = await resolveGroupUrl(name);
+                picked = { name, url };
+                $("ook").textContent = "✓ Группа " + name + " найдена";
+                $("ogo").disabled = false;
+              } catch (e) {
+                $("ook").textContent = /not-found/.test(e.message) ? "Не нашёл расписание этой группы" : "Не получилось: " + errText(e);
+              }
+            });
+            $("ogo").onclick = () => {
+              if (!picked) return;
+              S.sub = sub; store.set("sub", sub);
+              $("onb").classList.remove("on");
+              setGroup(picked);
+            };
+          }
+
+          /* ---------- настройки ---------- */
+          function renderSettings(){
+            const sw = (key, title, note) => `<button class="sw${P[key] ? " on" : ""}" data-p="${key}"><div class="t">${title}${note ? `<small>${note}</small>` : ""}</div><div class="k"></div></button>`;
+            const opt = (name, cur, items) => `<div class="opt">${items.map(([v,t]) => `<button data-${name}="${v}" class="${cur===v?"on":""}">${t}</button>`).join("")}</div>`;
+            $("setBox").innerHTML = `
+              <div class="sem" style="border-top-color:var(--yellow)">
+                <div class="sec" style="margin-top:0">Группа <span class="cur-grp">${esc(S.group ? S.group.name : "—")}</span></div>
+                <input class="inp" id="gq" placeholder="Сменить группу: введите номер" autocomplete="off">
+                <div class="res" id="gres"></div>
+                <p class="hint" id="ghint">Начните вводить номер группы — покажу подходящие.</p>
+                <div class="sec">Подгруппа</div>
+                ${opt("s", S.sub, [["all","Все"],["А","Подгр. А"],["Б","Подгр. Б"]])}
+                <p class="hint">Занятия другой подгруппы будут скрыты. Общие пары видны всегда.</p>
+              </div>
+              <div class="sem">
+                <div class="sec" style="margin-top:0">Оформление</div>
+                ${opt("t", P.theme, [["auto","Как в системе"],["light","Светлая"],["dark","Тёмная"]])}
+                ${sw("big", "Крупный текст", "Увеличить все надписи")}
+                ${sw("compact", "Компактные карточки", "Без преподавателя и номера пары — больше пар на экране")}
+              </div>
+              <div class="sem">
+                <div class="sec" style="margin-top:0">Расписание</div>
+                ${sw("showNow", "Карточка «Сейчас»", "Текущая пара, перерыв и сколько осталось")}
+                ${sw("hidePast", "Скрывать прошедшие пары", "Сегодня показывать только то, что ещё будет")}
+                ${sw("shortNames", "Краткие ФИО", "«Курков Ю.Б.» вместо полного имени")}
+                ${sw("showSunday", "Всегда показывать воскресенье", "")}
+                ${sw("weekendNext", "В воскресенье открывать следующую неделю", "")}
+              </div>
+              <div class="sem">
+                <div class="sec" style="margin-top:0">Данные</div>
+                <button class="linkbtn" id="setRefresh">Обновить всё с сайта</button>
+                <button class="linkbtn" id="setFio">Заново найти ФИО преподавателей</button>
+                <button class="linkbtn danger" id="setClear">Очистить сохранённое расписание</button>
+                <button class="linkbtn danger" id="setReset">Сбросить приложение и выбрать группу заново</button>
+                <p class="hint">Версия ${APP_VERSION} · данные с сайта dalgau.fliptable.ru. Расписание сохраняется в телефоне и доступно без интернета.</p>
+              </div>`;
+            const box = $("setBox");
+            box.querySelectorAll("[data-p]").forEach(b => b.onclick = () => { P[b.dataset.p] = !P[b.dataset.p]; savePrefs(); renderSettings(); renderAll(); });
+            box.querySelectorAll("[data-t]").forEach(b => b.onclick = () => { P.theme = b.dataset.t; savePrefs(); renderSettings(); });
+            box.querySelectorAll("[data-s]").forEach(b => b.onclick = () => { S.sub = b.dataset.s; store.set("sub", S.sub); renderSettings(); renderAll(); });
+            groupSearch($("gq"), $("gres"), $("ghint"), async (name) => {
+              $("ghint").textContent = "Открываю расписание группы " + name + "…";
+              try { const url = await resolveGroupUrl(name); setGroup({ name, url }); renderSettings(); switchView("vSched"); }
+              catch (e) { $("ghint").textContent = /not-found/.test(e.message) ? "Не нашёл расписание этой группы" : "Не получилось: " + errText(e); }
+            });
+            $("setRefresh").onclick = () => { refreshAll(true); switchView("vSched"); };
+            $("setFio").onclick = () => { Object.keys(FIO).forEach(k => delete FIO[k]); store.set("fio", FIO); Object.values(S.weeks).forEach(w => resolveTeachers(w.lessons.map(l => l.teacher))); if (S.ics) resolveTeachers(S.ics.events.map(e => e.teacher)); $("setFio").textContent = "Ищу ФИО… можно вернуться к расписанию"; };
+            $("setClear").onclick = () => { if (!confirm("Удалить сохранённое расписание? Оно загрузится заново с сайта.")) return; store.keys().filter(k => k.startsWith("g:")).forEach(k => store.del(k)); S.weeks = {}; S.ics = null; refreshAll(true); switchView("vSched"); };
+            $("setReset").onclick = () => { if (!confirm("Сбросить все настройки и выбрать группу заново?")) return; try { localStorage.clear(); } catch(e) {} location.reload(); };
+          }
+
+          /* ---------- склейка ---------- */
           function renderAll(){ setStatus(); renderNow(); renderWeek(); renderDay(); renderSubjectsIfOpen(); }
           function tick(){ renderNow(); renderWeek(); if (S.sel === todayIso()) renderDay(); renderSubjectsIfOpen(); }
-
+          function switchView(v){
+            document.querySelectorAll("nav button").forEach(x => x.classList.toggle("on", x.dataset.v === v));
+            document.querySelectorAll(".view").forEach(x => x.classList.toggle("on", x.id === v));
+            if (v === "vSubj") { renderSubjects(); loadIcs(); }
+            if (v === "vSet") renderSettings();
+            window.scrollTo(0,0);
+          }
           async function goWeek(delta){
             S.monday = addDays(S.monday, 7*delta);
             S.sel = iso(mondayOf(new Date())) === iso(S.monday) ? todayIso() : iso(S.monday);
-            renderAll();
-            await loadWeek(S.monday); renderAll();
+            renderAll(); await loadWeek(S.monday); renderAll();
           }
           function selectDay(di){ S.sel = di; renderWeek(); renderDay(); }
           function shiftDay(delta){
@@ -1004,50 +1113,56 @@ jobs:
             else selectDay(iso(d));
           }
           async function refreshAll(force){
+            if (!S.group) return false;
             const today = new Date();
             const ok = await loadWeek(mondayOf(today), force);
             if (iso(S.monday) !== iso(mondayOf(today))) await loadWeek(S.monday, force);
             renderAll();
-            loadWeek(addDays(mondayOf(today), 7), force).then(renderWeek);   // следующая неделя — заранее
+            loadWeek(addDays(mondayOf(today), 7), force).then(renderWeek);
             loadIcs(force);
             return ok;
           }
 
-          document.getElementById("days").addEventListener("click", e => { const b = e.target.closest(".day"); if (b) selectDay(b.dataset.d); });
-          document.getElementById("prevW").onclick = () => goWeek(-1);
-          document.getElementById("nextW").onclick = () => goWeek(1);
-          document.getElementById("btnRef").onclick = () => refreshAll(true);
-          document.getElementById("btnSet").onclick = openSettings;
-          document.getElementById("veil").onclick = closeSheet;
-          document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
-            document.querySelectorAll("nav button").forEach(x => x.classList.toggle("on", x === b));
-            document.querySelectorAll(".view").forEach(v => v.classList.toggle("on", v.id === b.dataset.v));
-            if (b.dataset.v === "vSubj") { renderSubjects(); loadIcs(); }
-            window.scrollTo(0,0);
-          });
+          $("days").addEventListener("click", e => { const b = e.target.closest(".day"); if (b) selectDay(b.dataset.d); });
+          $("prevW").onclick = () => goWeek(-1);
+          $("nextW").onclick = () => goWeek(1);
+          $("btnRef").onclick = () => refreshAll(true);
+          $("grpChip").onclick = () => switchView("vSet");
+          $("veil").onclick = closeSheet;
+          document.querySelectorAll("nav button").forEach(b => b.onclick = () => switchView(b.dataset.v));
+          if (window.matchMedia) { try { matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyPrefs); } catch(e) {} }
 
           let tx = null, ty = null;
-          document.getElementById("dayBox").addEventListener("touchstart", e => { tx = e.touches[0].clientX; ty = e.touches[0].clientY; }, {passive:true});
-          document.getElementById("dayBox").addEventListener("touchend", e => {
+          $("dayBox").addEventListener("touchstart", e => { tx = e.touches[0].clientX; ty = e.touches[0].clientY; }, {passive:true});
+          $("dayBox").addEventListener("touchend", e => {
             if (tx === null) return;
             const dx = e.changedTouches[0].clientX - tx, dy = e.changedTouches[0].clientY - ty; tx = null;
             if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy)*1.5) shiftDay(dx < 0 ? 1 : -1);
           });
 
-          window.handleBack = () => closeSheet();
-          window.onAppResume = () => { tick(); refreshAll(false); };
+          window.handleBack = () => {
+            if (closeSheet()) return true;
+            if ($("onb").classList.contains("on")) return false;
+            if (!$("vSched").classList.contains("on")) { switchView("vSched"); return true; }
+            return false;
+          };
+          window.onAppResume = () => { if (S.group) { tick(); refreshAll(false); } };
 
           (async function init(){
-            const t = new Date();
-            if (t.getDay() === 0) { S.monday = addDays(mondayOf(t), 7); S.sel = iso(S.monday); }
-            // сначала мгновенно показываем сохранённое
-            [mondayOf(t), S.monday, addDays(mondayOf(t),7)].forEach(m => { const c = store.get(gk("w:"+iso(m)), null); if (c) S.weeks[iso(m)] = c; });
-            renderAll();
-            await refreshAll(false);
-            recheckGroup();
-            resolveTeachers(Object.values(S.weeks).flatMap(w => w.lessons.map(l => l.teacher)));
+            applyPrefs();
+            if (!S.group) { renderAll(); showOnboarding(); }
+            else {
+              S.ics = store.get(gk("ics"), null);
+              const t = new Date();
+              if (t.getDay() === 0 && P.weekendNext) { S.monday = addDays(mondayOf(t), 7); S.sel = iso(S.monday); }
+              [mondayOf(t), S.monday, addDays(mondayOf(t),7)].forEach(m => { const c = store.get(gk("w:"+iso(m)), null); if (c) S.weeks[iso(m)] = c; });
+              renderAll();
+              await refreshAll(false);
+              recheckGroup();
+              resolveTeachers(Object.values(S.weeks).flatMap(w => w.lessons.map(l => l.teacher)));
+            }
             setInterval(tick, 15000);
-            setInterval(() => { if (S.err && !S.loading) refreshAll(true); }, 60000);
+            setInterval(() => { if (S.group && S.err && !S.loading) refreshAll(true); }, 60000);
           })();
           </script>
           </body>
