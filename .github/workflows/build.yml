@@ -51,8 +51,8 @@ jobs:
                   applicationId = "ru.dalgau.raspisanie"
                   minSdk = 26
                   targetSdk = 34
-                  versionCode = 4
-                  versionName = "4.0"
+                  versionCode = 5
+                  versionName = "5.0"
               }
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
@@ -88,7 +88,9 @@ jobs:
           package ru.dalgau.raspisanie
 
           import android.annotation.SuppressLint
+          import android.content.Intent
           import android.content.res.Configuration
+          import android.net.Uri
           import android.graphics.Color
           import android.os.Bundle
           import android.webkit.JavascriptInterface
@@ -167,7 +169,19 @@ jobs:
                   }
 
                   @JavascriptInterface
-                  fun fetch(id: String, url: String, xhr: Boolean) {
+                  fun fetch(id: String, url: String, xhr: Boolean) = request(id, url, xhr, null)
+
+                  @JavascriptInterface
+                  fun post(id: String, url: String, form: String) = request(id, url, true, form)
+
+                  @JavascriptInterface
+                  fun openUrl(url: String) {
+                      runOnUiThread {
+                          try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (e: Exception) {}
+                      }
+                  }
+
+                  private fun request(id: String, url: String, xhr: Boolean, form: String?) {
                       thread {
                           var ok = false
                           var body = "error"
@@ -179,13 +193,19 @@ jobs:
                                   c.readTimeout = 45000
                                   c.instanceFollowRedirects = true
                                   c.setRequestProperty("User-Agent",
-                                      "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Mobile Safari/537.36")
+                                      "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Mobile Safari/537.36 RaspisanieApp/5.0")
                                   c.setRequestProperty("Accept-Language", "ru-RU,ru;q=0.9")
                                   if (xhr) {
                                       c.setRequestProperty("X-Requested-With", "XMLHttpRequest")
                                       c.setRequestProperty("Accept", "application/json, text/javascript, */*; q=0.01")
                                   } else {
                                       c.setRequestProperty("Accept", "text/html,text/calendar,*/*")
+                                  }
+                                  if (form != null) {
+                                      c.requestMethod = "POST"
+                                      c.doOutput = true
+                                      c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
+                                      c.outputStream.use { it.write(form.toByteArray(Charsets.UTF_8)) }
                                   }
                                   val code = c.responseCode
                                   if (code in 200..299) {
@@ -438,6 +458,29 @@ jobs:
           .linkbtn{color:var(--accent);font-weight:600;padding:10px 0;display:block;border-top:1px solid var(--line);width:100%;text-align:left}
           .linkbtn.danger{color:#C0392B}
 
+          /* ---- ЭИОС ---- */
+          .dl{display:flex;gap:12px;background:var(--card);border-radius:6px;padding:11px 14px;margin-bottom:8px;box-shadow:var(--shadow);border-left:4px solid var(--c,var(--accent));align-items:flex-start}
+          .dl .ic{font-size:20px;line-height:1.2}
+          .dl .bd{flex:1;min-width:0}
+          .dl .ttl{font-weight:600;font-size:14px}
+          .dl .crs{font-size:12px;color:var(--muted);margin-top:2px}
+          .dl .when{font-family:var(--cond);font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.3px;margin-top:5px;color:var(--c,var(--accent))}
+          .dl.soon{--c:#D9822B}.dl.over{--c:#C0392B}.dl.far{--c:var(--accent)}
+          .crs-row{background:var(--card);border-radius:6px;padding:12px 14px;margin-bottom:8px;box-shadow:var(--shadow)}
+          .crs-row .top{display:flex;justify-content:space-between;gap:10px}
+          .crs-row .nm{font-weight:600;font-size:14px}
+          .crs-row .gr{font-family:var(--cond);font-weight:700;font-size:16px;color:var(--accent);white-space:nowrap}
+          .user-card{display:flex;align-items:center;gap:12px}
+          .ava{width:44px;height:44px;border-radius:50%;background:var(--green);color:#fff;display:grid;place-items:center;font-family:var(--cond);font-weight:700;font-size:18px;flex:none}
+          .etag{font-family:var(--cond);font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:#FCE3CF;color:#B4610E;text-transform:uppercase}
+          :root[data-theme="dark"] .etag{background:#45301F;color:#FFB061}
+          .daydl{background:var(--card);border-radius:6px;padding:10px 14px;margin-bottom:10px;box-shadow:var(--shadow);border-left:4px solid #D9822B;font-size:13px}
+          .daydl b{font-family:var(--cond);text-transform:uppercase;letter-spacing:.3px;color:#B4610E}
+          .daydl div{margin-top:4px}
+          .tabs2{display:flex;gap:6px;margin:0 0 10px}
+          .tabs2 button{flex:1;padding:8px;border-radius:999px;background:var(--card);font-weight:600;font-size:14px;box-shadow:var(--shadow)}
+          .tabs2 button.on{background:var(--green);color:#fff}
+
           /* ---- первый вход ---- */
           #onb{position:fixed;inset:0;z-index:20;background:var(--bg);overflow:auto;display:none}
           #onb.on{display:block}
@@ -474,12 +517,14 @@ jobs:
               <div id="dayBox"></div>
             </section>
             <section class="view" id="vSubj"><h2 class="h-serif">Предметы семестра</h2><div id="subjBox"></div></section>
+            <section class="view" id="vEios"><h2 class="h-serif">ЭИОС · Moodle</h2><div id="eiosBox"></div></section>
             <section class="view" id="vSet"><h2 class="h-serif">Настройки</h2><div id="setBox"></div></section>
           </main>
 
           <nav>
             <button class="on" data-v="vSched"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="3"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Расписание</button>
             <button data-v="vSubj"><svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5V21h16"/></svg>Предметы</button>
+            <button data-v="vEios"><svg viewBox="0 0 24 24"><path d="M22 10 12 5 2 10l10 5 10-5z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/></svg>ЭИОС</button>
             <button data-v="vSet"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Настройки</button>
           </nav>
 
@@ -507,7 +552,7 @@ jobs:
 
           <script>
           "use strict";
-          const APP_VERSION = "4.0";
+          const APP_VERSION = "5.0";
           const SITE = "https://dalgau.fliptable.ru";
           const SLOTS = ["8:00","9:45","11:30","14:00","15:45","17:30"];
           const DOW = ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"];
@@ -662,6 +707,16 @@ jobs:
                   };
                   go(0);
                 }
+              });
+            } finally { release(); }
+          }
+          async function httpPost(url, form){
+            await slot();
+            try {
+              return await new Promise((res, rej) => {
+                if (window.Native && Native.post) { const id = String(++seq); pending[id] = {res, rej}; Native.post(id, url, form); }
+                else fetch(url, { method: "POST", body: form, headers: {"Content-Type":"application/x-www-form-urlencoded"} })
+                  .then(async r => r.ok ? res({ body: await r.text(), url: r.url }) : rej(new Error("HTTP " + r.status)), e => rej(e));
               });
             } finally { release(); }
           }
@@ -846,7 +901,7 @@ jobs:
             }
             if (!ls.length) {
               const wk = d.getDay()===0 || d.getDay()===6;
-              box.innerHTML = `<div class="empty"><div class="em">${wk ? "🛋️" : "🎈"}</div><b>${wk ? "Выходной" : "Пар нет"}</b>${DOW_FULL[(d.getDay()+6)%7]}, ${d.getDate()} ${MON[d.getMonth()]}</div>`;
+              box.innerHTML = dayDeadlines(S.sel) + `<div class="empty"><div class="em">${wk ? "🛋️" : "🎈"}</div><b>${wk ? "Выходной" : "Пар нет"}</b>${DOW_FULL[(d.getDay()+6)%7]}, ${d.getDate()} ${MON[d.getMonth()]}</div>`;
               return;
             }
             const t = nowMinF(), isToday = S.sel === todayIso();
@@ -859,6 +914,7 @@ jobs:
             else if (prog.every(p => p >= 1)) head = `<b>Все ${pairs(ls.length)} прошли</b><span>${ls[0].start} – ${ls[ls.length-1].end}</span>`;
             else head = `<b>${pairs(ls.length)}</b><span>${ls[0].start} – ${ls[ls.length-1].end} · в вузе ${dur(last-first)}</span>`;
             let h = `<div class="dprog"><div class="row">${head}</div><div class="bar">${prog.map(p => `<i style="--p:${Math.round(p*100)}%"></i>`).join("")}</div></div>`;
+            h += dayDeadlines(S.sel);
 
             const hideDone = P.hidePast && isToday && !S.showPast && doneN > 0 && doneN < ls.length;
             if (hideDone) h += `<div class="hidden-note">Скрыто прошедших: ${doneN} · <button id="showPast">показать</button></div>`;
@@ -885,6 +941,7 @@ jobs:
                 <div class="tm"><b>${l.start}</b><span>${l.end}</span>${l.num ? `<div class="n">${l.num} пара</div>` : ""}</div>
                 <div class="bd"><div class="ttl">${esc(l.name)}</div>
                   <div class="tags"><span class="tag">${esc(l.kindT)}</span>${l.sub ? `<span class="tag">Подгр. ${esc(l.sub)}</span>` : ""}
+                    ${(() => { const n = eventsForSubject(l.name, true).length; return n ? `<span class="etag">📝 ${n} ${plural(n,"задание","задания","заданий")}</span>` : ""; })()}
                     ${l.room ? `<span class="meta">${ICON_PIN}${esc(l.room)}</span>` : ""}</div>
                   ${l.teacher ? `<div class="meta who">${ICON_USER}${esc(teacherNames(l.teacher))}</div>` : ""}
                   ${progTxt}
@@ -893,6 +950,14 @@ jobs:
             box.innerHTML = h;
             box.querySelectorAll(".lesson").forEach(el => el.onclick = () => openLesson(ls[+el.dataset.i]));
             const sp = $("showPast"); if (sp) sp.onclick = () => { S.showPast = true; renderDay(); };
+            box.querySelectorAll(".daydl [data-url]").forEach(el => el.onclick = () => openExt(el.dataset.url));
+          }
+
+          function dayDeadlines(di){
+            if (!E.data) return "";
+            const list = E.data.events.filter(e => iso(new Date(e.time*1000)) === di).sort((a,b) => a.time - b.time);
+            if (!list.length) return "";
+            return `<div class="daydl"><b>📌 Сдать в этот день · ЭИОС</b>${list.map(e => `<div data-url="${esc(e.url)}">${MOD_IC[e.mod] || "📌"} ${hhmm(new Date(e.time*1000))} — ${esc(e.name)} <span style="color:var(--muted)">· ${esc(e.course)}</span></div>`).join("")}</div>`;
           }
 
           /* ---------- предметы ---------- */
@@ -959,7 +1024,11 @@ jobs:
               h += `<div class="li"><span>За семестр</span><b>${ev.length} ${plural(ev.length,"занятие","занятия","занятий")}, прошло ${done}, осталось ${ev.length-done}</b></div>`;
               h += `<div class="li"><span>Следующее</span><b>${after ? fmtDate(after.date)+", "+after.start+(after.room ? " · "+esc(after.room) : "") : "больше нет"}</b></div>`;
             }
+            const evs = eventsForSubject(l.name, false).sort((a,b) => a.time - b.time);
+            if (evs.length) h += `<div class="sec">Задания в ЭИОС</div>` + evs.map(dlHtml).join("");
+            else if (!E.acc) h += `<p class="hint" style="margin-top:14px">Подключите ЭИОС на вкладке «ЭИОС» — здесь появятся задания по этому предмету.</p>`;
             openSheet(h);
+            bindLinks($("sheetBody"));
           }
           function openSubject(s){
             const up = s.all.filter(e => !isDone(e));
@@ -1071,6 +1140,12 @@ jobs:
                 ${sw("weekendNext", "В воскресенье открывать следующую неделю", "")}
               </div>
               <div class="sem">
+                <div class="sec" style="margin-top:0">ЭИОС (eiop.dalgau.ru)</div>
+                <p class="hint" style="margin:0 0 4px">${E.acc ? "Вы вошли как " + esc(E.acc.fullname || E.acc.login) : "Не подключено — задания и оценки не показываются"}</p>
+                <button class="linkbtn" id="setEios">${E.acc ? "Открыть задания и курсы" : "Подключить ЭИОС"}</button>
+                ${E.acc ? `<button class="linkbtn danger" id="setEiosOut">Выйти из ЭИОС</button>` : ""}
+              </div>
+              <div class="sem">
                 <div class="sec" style="margin-top:0">Данные</div>
                 <button class="linkbtn" id="setRefresh">Обновить всё с сайта</button>
                 <button class="linkbtn" id="setFio">Заново найти ФИО преподавателей</button>
@@ -1087,10 +1162,130 @@ jobs:
               try { const url = await resolveGroupUrl(name); setGroup({ name, url }); renderSettings(); switchView("vSched"); }
               catch (e) { $("ghint").textContent = /not-found/.test(e.message) ? "Не нашёл расписание этой группы" : "Не получилось: " + errText(e); }
             });
-            $("setRefresh").onclick = () => { refreshAll(true); switchView("vSched"); };
+            $("setRefresh").onclick = () => { refreshAll(true); loadEios(true); switchView("vSched"); };
+            $("setEios").onclick = () => switchView("vEios");
+            if ($("setEiosOut")) $("setEiosOut").onclick = () => { if (confirm("Выйти из ЭИОС в приложении?")) eiosLogout(); };
             $("setFio").onclick = () => { Object.keys(FIO).forEach(k => delete FIO[k]); store.set("fio", FIO); Object.values(S.weeks).forEach(w => resolveTeachers(w.lessons.map(l => l.teacher))); if (S.ics) resolveTeachers(S.ics.events.map(e => e.teacher)); $("setFio").textContent = "Ищу ФИО… можно вернуться к расписанию"; };
             $("setClear").onclick = () => { if (!confirm("Удалить сохранённое расписание? Оно загрузится заново с сайта.")) return; store.keys().filter(k => k.startsWith("g:")).forEach(k => store.del(k)); S.weeks = {}; S.ics = null; refreshAll(true); switchView("vSched"); };
             $("setReset").onclick = () => { if (!confirm("Сбросить все настройки и выбрать группу заново?")) return; try { localStorage.clear(); } catch(e) {} location.reload(); };
+          }
+
+          /* ---------- ЭИОС (Moodle) ---------- */
+          const EIOS = "https://eiop.dalgau.ru";
+          const E = { acc: store.get("eios", null), data: store.get("eiosData", null), loading: false, err: null, tab: "dl", busyLogin: false };
+          const form = obj => Object.entries(obj).map(([k,v]) => encodeURIComponent(k)+"="+encodeURIComponent(v)).join("&");
+          function openExt(url){ if (!url) return; try { if (window.Native && Native.openUrl) Native.openUrl(url); else window.open(url, "_blank"); } catch(e) {} }
+          async function moodle(fn, params){
+            const p = Object.assign({ wstoken: E.acc.token, wsfunction: fn, moodlewsrestformat: "json" }, params || {});
+            const r = await httpPost(EIOS + "/webservice/rest/server.php?moodlewsrestformat=json&wsfunction=" + fn, form(p));
+            let j; try { j = JSON.parse(r.body); } catch (e) { throw new Error("ЭИОС прислала не то, что ожидалось"); }
+            if (j && j.exception) { const e = new Error(j.message || j.errorcode); e.code = j.errorcode; throw e; }
+            return j;
+          }
+          async function eiosLogin(user, pass){
+            const r = await httpPost(EIOS + "/login/token.php", form({ username: user, password: pass, service: "moodle_mobile_app" }));
+            let j; try { j = JSON.parse(r.body); } catch (e) { throw new Error("ЭИОС не ответила как нужно, попробуйте позже"); }
+            if (!j.token) { const e = new Error(j.error || "Не удалось войти"); e.code = j.errorcode; throw e; }
+            E.acc = { token: j.token, login: user };
+            const si = await moodle("core_webservice_get_site_info");
+            E.acc.userid = si.userid; E.acc.fullname = si.fullname;
+            store.set("eios", E.acc);
+          }
+          function eiosLogout(){ E.acc = null; E.data = null; E.err = null; store.del("eios"); store.del("eiosData"); renderEiosIfOpen(); renderDay(); if ($("vSet").classList.contains("on")) renderSettings(); }
+          async function loadEios(force){
+            if (!E.acc || E.loading) return;
+            if (E.data && !force && Date.now() - E.data.ts < 20*60*1000) return;
+            E.loading = true; E.err = null; renderEiosIfOpen();
+            try {
+              const now = Math.floor(Date.now()/1000);
+              const [ev, courses, grades] = await Promise.all([
+                moodle("core_calendar_get_action_events_by_timesort", { timesortfrom: now - 14*86400, limitnum: 50 }),
+                moodle("core_enrol_get_users_courses", { userid: E.acc.userid }),
+                moodle("gradereport_overview_get_course_grades", {}).catch(() => ({ grades: [] }))
+              ]);
+              const gmap = {}; (grades.grades || []).forEach(g => gmap[g.courseid] = g.grade);
+              E.data = {
+                ts: Date.now(),
+                events: (ev.events || []).map(e => ({ id: e.id, name: e.name, time: e.timesort, course: e.course ? e.course.fullname : "", url: e.url || (e.action && e.action.url) || "", mod: e.modulename || "" })),
+                courses: (courses || []).map(c => ({ id: c.id, name: c.fullname, progress: c.progress, last: c.lastaccess, grade: gmap[c.id] || "", url: EIOS + "/course/view.php?id=" + c.id }))
+              };
+              store.set("eiosData", E.data);
+            } catch (e) {
+              if (e.code === "invalidtoken") { E.err = "Вход в ЭИОС устарел — войдите снова"; E.acc = null; store.del("eios"); }
+              else E.err = e.code ? (e.message || e.code) : errText(e).replace("сайт вуза", "ЭИОС");
+            }
+            E.loading = false; renderEiosIfOpen(); renderDay();
+          }
+          const normName = s => (s||"").toLowerCase().replace(/ё/g,"е").replace(/\([^)]*\)/g," ").replace(/[^a-zа-я0-9]+/g," ").trim();
+          function eventsForSubject(name, upcomingOnly){
+            if (!E.data) return [];
+            const n = normName(name); if (n.length < 4) return [];
+            const now = Date.now()/1000;
+            return E.data.events.filter(e => { const c = normName(e.course); return c && (c.includes(n) || n.includes(c)) && (!upcomingOnly || e.time >= now); });
+          }
+          const MOD_IC = { assign:"📝", quiz:"✅", forum:"💬", workshop:"🛠️", lesson:"📖", feedback:"📋", choice:"☑️", scorm:"🎓" };
+          function dlWhen(t){
+            const d = t - Date.now()/1000, dt = new Date(t*1000);
+            const date = DOW[(dt.getDay()+6)%7] + ", " + dt.getDate() + " " + MON[dt.getMonth()] + " в " + hhmm(dt);
+            const days = Math.ceil(d/86400);
+            if (d < 0) return { cls: "over", txt: "просрочено · срок был " + date };
+            if (d < 86400) return { cls: "soon", txt: "осталось " + dur(d/60) + " · " + date };
+            if (days <= 3) return { cls: "soon", txt: "через " + days + " " + plural(days,"день","дня","дней") + " · " + date };
+            return { cls: "far", txt: date + " · через " + days + " " + plural(days,"день","дня","дней") };
+          }
+          function dlHtml(e){ const w = dlWhen(e.time); return `<div class="dl ${w.cls}" data-url="${esc(e.url)}"><div class="ic">${MOD_IC[e.mod] || "📌"}</div><div class="bd"><div class="ttl">${esc(e.name)}</div><div class="crs">${esc(e.course)}</div><div class="when">${w.txt}</div></div></div>`; }
+          function bindLinks(box){ box.querySelectorAll("[data-url]").forEach(el => el.onclick = () => openExt(el.dataset.url)); }
+          function renderEiosIfOpen(){ if ($("vEios").classList.contains("on")) renderEios(); }
+          function renderEios(){
+            const box = $("eiosBox");
+            if (!E.acc) {
+              box.innerHTML = `<div class="sem">
+                <p class="intro" style="margin:0 0 12px">Войдите в электронную среду вуза (eiop.dalgau.ru) — и здесь появятся ваши задания со сроками сдачи, тесты, курсы и оценки. Задания будут видны и на карточках пар в расписании.</p>
+                <div class="sec" style="margin-top:0">Логин ЭИОС</div>
+                <input class="inp" id="eu" autocomplete="username" autocapitalize="off" spellcheck="false" value="${esc(store.get("eiosLogin", ""))}">
+                <div class="sec">Пароль</div>
+                <input class="inp" id="ep" type="password" autocomplete="current-password">
+                <button class="pill solid onb-go" id="ego">${E.busyLogin ? "Вхожу…" : "Войти"}</button>
+                <p class="hint" id="eerr" style="color:#C0392B">${esc(E.err || "")}</p>
+                <p class="hint">Пароль не сохраняется: приложение получает от сайта только ключ доступа — так же работает официальное приложение Moodle. Выйти можно в любой момент.</p>
+                <button class="linkbtn" id="eforgot" style="margin-top:8px">Забыли логин или пароль?</button>
+              </div>`;
+              $("eforgot").onclick = () => openExt(EIOS + "/login/forgot_password.php");
+              $("ego").onclick = async () => {
+                const u = $("eu").value.trim(), p = $("ep").value;
+                if (!u || !p) { $("eerr").textContent = "Введите логин и пароль"; return; }
+                if (E.busyLogin) return;
+                E.busyLogin = true; $("ego").textContent = "Вхожу…"; $("eerr").textContent = "";
+                try { await eiosLogin(u, p); store.set("eiosLogin", u); E.err = null; E.busyLogin = false; renderEios(); loadEios(true); }
+                catch (e) { E.busyLogin = false; E.err = e.code === "invalidlogin" ? "Неверный логин или пароль" : (e.code ? e.message : errText(e).replace("сайт вуза", "ЭИОС")); renderEios(); }
+              };
+              return;
+            }
+            const d = E.data, now = Date.now()/1000;
+            const ini = (E.acc.fullname || E.acc.login || "?").split(" ").map(x => x[0]).slice(0,2).join("");
+            let h = `<div class="sem"><div class="user-card"><div class="ava">${esc(ini)}</div><div style="flex:1;min-width:0"><b>${esc(E.acc.fullname || E.acc.login)}</b><div class="hint" style="margin:2px 0 0">${E.loading ? "Обновляю данные ЭИОС…" : d ? "Обновлено в " + hhmm(new Date(d.ts)) : ""}</div></div>
+              <button class="iconbtn" id="eref" style="background:var(--mint)"><svg viewBox="0 0 24 24" style="stroke:var(--mint-t)"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg></button></div>
+              ${E.err ? `<p class="hint" style="color:#C0392B">${esc(E.err)}</p>` : ""}</div>`;
+            if (!d) { box.innerHTML = h + `<div class="empty"><div class="em">⏳</div><b>Загружаю задания и курсы</b></div>`; $("eref").onclick = () => loadEios(true); return; }
+            const upcoming = d.events.filter(e => e.time >= now).sort((a,b) => a.time - b.time);
+            const over = d.events.filter(e => e.time < now).sort((a,b) => b.time - a.time);
+            h += `<div class="tabs2"><button data-et="dl" class="${E.tab==="dl"?"on":""}">Задания · ${upcoming.length + over.length}</button><button data-et="cr" class="${E.tab==="cr"?"on":""}">Курсы · ${d.courses.length}</button></div>`;
+            if (E.tab === "dl") {
+              if (!upcoming.length && !over.length) h += `<div class="empty"><div class="em">🎉</div><b>Нет заданий со сроком</b>Всё сдано или сроки ещё не назначены</div>`;
+              if (over.length) h += `<div class="sec">Просрочено</div>` + over.map(dlHtml).join("");
+              if (upcoming.length) h += `<div class="sec">Ближайшие сроки</div>` + upcoming.map(dlHtml).join("");
+            } else {
+              const cs = d.courses.slice().sort((a,b) => (b.last||0) - (a.last||0));
+              h += cs.map(c => `<div class="crs-row" data-url="${esc(c.url)}"><div class="top"><div class="nm">${esc(c.name)}</div>${c.grade ? `<div class="gr">${esc(c.grade)}</div>` : ""}</div>
+                ${typeof c.progress === "number" ? `<div class="bar2"><i style="width:${Math.round(c.progress)}%"></i></div><div class="row2"><span>Пройдено ${Math.round(c.progress)}%</span><span>${c.last ? "заходили " + new Date(c.last*1000).getDate() + " " + MON_S[new Date(c.last*1000).getMonth()] : ""}</span></div>` : ""}</div>`).join("") || `<div class="empty"><div class="em">📚</div><b>Курсов не найдено</b></div>`;
+            }
+            h += `<button class="linkbtn" id="eopen">Открыть ЭИОС в браузере</button><button class="linkbtn danger" id="eout">Выйти из ЭИОС</button>`;
+            box.innerHTML = h;
+            bindLinks(box);
+            box.querySelectorAll("[data-et]").forEach(b => b.onclick = () => { E.tab = b.dataset.et; renderEios(); });
+            $("eref").onclick = () => loadEios(true);
+            $("eopen").onclick = () => openExt(EIOS + "/my/");
+            $("eout").onclick = () => { if (confirm("Выйти из ЭИОС в приложении?")) eiosLogout(); };
           }
 
           /* ---------- склейка ---------- */
@@ -1101,6 +1296,7 @@ jobs:
             document.querySelectorAll(".view").forEach(x => x.classList.toggle("on", x.id === v));
             if (v === "vSubj") { renderSubjects(); loadIcs(); }
             if (v === "vSet") renderSettings();
+            if (v === "vEios") { renderEios(); loadEios(); }
             window.scrollTo(0,0);
           }
           async function goWeek(delta){
@@ -1148,7 +1344,7 @@ jobs:
             if (!$("vSched").classList.contains("on")) { switchView("vSched"); return true; }
             return false;
           };
-          window.onAppResume = () => { if (S.group) { tick(); refreshAll(false); } };
+          window.onAppResume = () => { if (S.group) { tick(); refreshAll(false); } loadEios(false); };
 
           (async function init(){
             applyPrefs();
@@ -1162,6 +1358,7 @@ jobs:
               await refreshAll(false);
               recheckGroup();
               resolveTeachers(Object.values(S.weeks).flatMap(w => w.lessons.map(l => l.teacher)));
+              loadEios(false);
             }
             setInterval(tick, 15000);
             setInterval(() => { if (S.group && S.err && !S.loading) refreshAll(true); }, 60000);
